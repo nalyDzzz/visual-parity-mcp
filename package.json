@@ -4,8 +4,8 @@
   "description": "MCP server and CLI for visual parity QA between a live site and local migration.",
   "type": "module",
   "bin": {
-    "visual-parity": "./dist/cli.js",
-    "visual-parity-mcp": "./dist/mcp.js"
+    "visual-parity": "dist/cli.js",
+    "visual-parity-mcp": "dist/mcp.js"
   },
   "files": [
     "dist",
