@@ -22,6 +22,7 @@ export interface ComparePagesOptions {
   styleProperties?: string[];
   compareStyles?: boolean;
   hideSelectors?: string[];
+  presets?: string[];
   maxElementsPerSelector?: number;
   diffLimit?: number;
 }
@@ -45,6 +46,7 @@ export interface InspectSelectorOptions {
   threshold?: number;
   styleProperties?: string[];
   hideSelectors?: string[];
+  presets?: string[];
   maxElementsPerSelector?: number;
   diffLimit?: number;
 }

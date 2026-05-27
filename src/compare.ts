@@ -5,12 +5,14 @@ import { PNG } from "pngjs";
 import sharp from "sharp";
 import { createContext, launchChromium, normalizeViewport, preparePage, screenshotFirstMatch, screenshotPage } from "./browser.js";
 import { DEFAULT_SELECTORS, DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
+import { applyPresets } from "./presets.js";
 import { writeInspectReport, writePageReport } from "./report.js";
 import { captureStyleSnapshots, diffStyleSnapshots } from "./styles.js";
 import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport } from "./types.js";
 import { ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
 
-export async function comparePages(options: ComparePagesOptions): Promise<PageComparisonReport> {
+export async function comparePages(rawOptions: ComparePagesOptions): Promise<PageComparisonReport> {
+  const options = applyPresets(rawOptions);
   const viewport = normalizeViewport(options.viewport);
   const threshold = options.threshold ?? 0.1;
   const maxDiffPercent = options.maxDiffPercent ?? 1;
@@ -75,7 +77,8 @@ export async function comparePages(options: ComparePagesOptions): Promise<PageCo
   }
 }
 
-export async function inspectSelector(options: InspectSelectorOptions): Promise<InspectSelectorReport> {
+export async function inspectSelector(rawOptions: InspectSelectorOptions): Promise<InspectSelectorReport> {
+  const options = applyPresets(rawOptions);
   const viewport = normalizeViewport(options.viewport);
   const outputDir = options.outputDir ?? "reports/visual-parity";
   const runDir = makeRunDir(outputDir, options.name, `inspect-${slugify(options.selector)}-${Date.now()}`);

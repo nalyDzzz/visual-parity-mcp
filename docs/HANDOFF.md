@@ -15,7 +15,7 @@ Target outcome: give Claude/Codex an MCP + CLI that compares the live HubSpot UR
 Path:
 
 ```bash
-/home/dylan/Projects/visual-parity-mcp
+/absolute/path/to/visual-parity-mcp
 ```
 
 Primary deliverables:
@@ -32,11 +32,12 @@ cd /path/to/nextjs-site
 npm run dev
 
 # Terminal 2: compare live vs local
-cd /home/dylan/Projects/visual-parity-mcp
+cd /absolute/path/to/visual-parity-mcp
 npm run build
 node dist/cli.js compare \
   --live https://live-hubspot-site.com/some-page \
   --local http://localhost:3000/some-page \
+  --preset hubspot \
   --selector header \
   --selector main \
   --selector h1 \
@@ -103,7 +104,13 @@ Artifacts:
 
 ## Noise to hide on HubSpot pages
 
-Common selectors to pass via `--hide` / `hideSelectors`:
+Use the built-in preset first:
+
+```bash
+--preset hubspot
+```
+
+It adds common HubSpot selector targets and hides cookie banners, HubSpot iframes/forms/chat widgets, CAPTCHA badges, and aria-live regions. Add manual `--hide` / `hideSelectors` only for project-specific noise:
 
 ```text
 .cookie-banner
@@ -124,7 +131,7 @@ Don't hide real page content unless it is dynamic/noisy.
 Start here:
 
 ```bash
-cd /home/dylan/Projects/visual-parity-mcp
+cd /absolute/path/to/visual-parity-mcp
 git status
 read docs/HANDOFF.md
 read docs/ARCHITECTURE.md

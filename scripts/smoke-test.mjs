@@ -42,6 +42,8 @@ const child = spawn(
     "h1",
     "--selector",
     ".cta",
+    "--preset",
+    "hubspot",
     "--max-diff-percent",
     "0"
   ],

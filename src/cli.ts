@@ -30,6 +30,7 @@ program
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -63,6 +64,7 @@ program
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -102,6 +104,7 @@ program
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
     await runCommand(async () => {
@@ -118,7 +121,8 @@ program
         },
         waitMs: toNumber(opts.waitMs, 1000),
         timeoutMs: toNumber(opts.timeoutMs, 30000),
-        hideSelectors: uniqueNonEmpty(opts.hide)
+        hideSelectors: uniqueNonEmpty(opts.hide),
+        presets: uniqueNonEmpty(opts.preset)
       };
       const report = await inspectSelector(options);
       const summary = {
@@ -162,6 +166,7 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
     maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
     selectors: uniqueNonEmpty(opts.selector),
     hideSelectors: uniqueNonEmpty(opts.hide),
+    presets: uniqueNonEmpty(opts.preset),
     compareStyles: opts.styles !== false
   };
 }

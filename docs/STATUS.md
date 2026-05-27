@@ -20,11 +20,14 @@ Implemented:
 - JSON + dark HTML reports
 - smoke fixtures
 - smoke test script
+- MIT license
+- GitHub Actions CI
+- HubSpot preset: `--preset hubspot` / `presets: ["hubspot"]`
 
 ## Verified commands
 
 ```bash
-cd /home/dylan/Projects/visual-parity-mcp
+cd /absolute/path/to/visual-parity-mcp
 npm install
 npm run build
 node dist/cli.js --help
@@ -91,7 +94,7 @@ reports/inspect-smoke/hero/inspect.html
   "mcpServers": {
     "visual-parity": {
       "command": "node",
-      "args": ["/home/dylan/Projects/visual-parity-mcp/dist/mcp.js"]
+      "args": ["/absolute/path/to/visual-parity-mcp/dist/mcp.js"]
     }
   }
 }
@@ -109,12 +112,13 @@ npm run dev
 Then run:
 
 ```bash
-cd /home/dylan/Projects/visual-parity-mcp
+cd /absolute/path/to/visual-parity-mcp
 node dist/cli.js compare \
   --live https://LIVE-HUBSPOT-URL/path \
   --local http://localhost:3000/path \
   --out reports/visual-parity \
   --name first-real-page \
+  --preset hubspot \
   --selector header \
   --selector main \
   --selector h1 \

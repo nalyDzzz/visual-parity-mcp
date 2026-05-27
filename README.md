@@ -2,7 +2,7 @@
 
 A local-first visual QA tool for migration work where an AI coding agent needs to match a live website 1:1 against a local rewrite.
 
-Built for Dylan's HubSpot → Sanity/Next.js migration, because HubSpot CSS is a haunted landfill and copying it directly is how you summon production demons.
+Built for HubSpot → Sanity/Next.js migrations, because HubSpot CSS is a haunted landfill and copying it directly is how you summon production demons.
 
 ## What it does
 
@@ -11,7 +11,7 @@ Visual Parity MCP compares:
 - **Live source page:** e.g. `https://old-hubspot-site.com/about`
 - **Local migrated page:** e.g. `http://localhost:3000/about`
 
-It then produces:
+It produces:
 
 - `live.png` screenshot
 - `local.png` screenshot
@@ -36,7 +36,6 @@ Rendered output is the truth. This tool compares rendered output and tells the a
 ## Install
 
 ```bash
-cd /home/dylan/Projects/visual-parity-mcp
 npm install
 npm run build
 ```
@@ -55,13 +54,12 @@ npx playwright install chromium
 node dist/cli.js compare \
   --live https://old-site.com/about \
   --local http://localhost:3000/about \
+  --preset hubspot \
   --selector header \
   --selector main \
   --selector h1 \
   --selector '.hero' \
-  --selector '.cta' \
-  --hide '.chat-widget' \
-  --hide '.cookie-banner'
+  --selector '.cta'
 ```
 
 ### Compare multiple routes
@@ -70,6 +68,7 @@ node dist/cli.js compare \
 node dist/cli.js routes \
   --live-base https://old-site.com \
   --local-base http://localhost:3000 \
+  --preset hubspot \
   --path / \
   --path /about \
   --path /pricing
@@ -81,6 +80,7 @@ node dist/cli.js routes \
 node dist/cli.js inspect \
   --live https://old-site.com/about \
   --local http://localhost:3000/about \
+  --preset hubspot \
   --selector '.hero'
 ```
 
@@ -99,20 +99,41 @@ node dist/cli.js inspect \
 --max-diff-percent <num>    Failure threshold, default 1.0
 --selector <css>            Repeatable selector for style/layout extraction
 --hide <css>                Repeatable noisy selector to hide before screenshot
+--preset <name>             Repeatable preset bundle; currently: hubspot
 --no-styles                 Disable computed style extraction
 --json                      Print compact JSON only
 ```
 
+## HubSpot preset
+
+`--preset hubspot` adds a sane default bundle for this exact migration pain in the ass:
+
+- common content/style selectors: `body`, `header`, `nav`, `main`, `footer`, `section`, headings, buttons, hero/CTA/card/module-ish classes
+- common HubSpot noise masks: cookie banners, HubSpot iframes/forms/chat widgets, CAPTCHA badge, aria-live regions
+
+You can still add extra selectors manually:
+
+```bash
+node dist/cli.js compare \
+  --live https://old-site.com/pricing \
+  --local http://localhost:3000/pricing \
+  --preset hubspot \
+  --selector '.pricing-card' \
+  --hide '.promo-modal'
+```
+
+Don't hide real page content unless it is dynamic/noisy. The point is visual truth, not sweeping ugly evidence under the rug like a corporate incident report.
+
 ## MCP usage
 
-After building, configure your MCP client to run:
+After building, configure your MCP client to run this repo's built server:
 
 ```json
 {
   "mcpServers": {
     "visual-parity": {
       "command": "node",
-      "args": ["/home/dylan/Projects/visual-parity-mcp/dist/mcp.js"]
+      "args": ["/absolute/path/to/visual-parity-mcp/dist/mcp.js"]
     }
   }
 }
@@ -137,8 +158,9 @@ Example `compare_pages` input:
   "waitMs": 1000,
   "threshold": 0.1,
   "maxDiffPercent": 1,
-  "selectors": ["header", "main", "h1", ".hero", ".cta"],
-  "hideSelectors": [".chat-widget", ".cookie-banner"],
+  "presets": ["hubspot"],
+  "selectors": [".custom-section"],
+  "hideSelectors": [".custom-chat-widget"],
   "compareStyles": true
 }
 ```
@@ -146,31 +168,28 @@ Example `compare_pages` input:
 ## Recommended migration workflow
 
 1. Start the Next.js app locally.
-2. Compare one route against the live HubSpot route.
+2. Compare one route against the live HubSpot route using `--preset hubspot`.
 3. Open `report.html` and inspect `diff.png`.
 4. Give Claude/Codex the JSON summary and report paths.
 5. Fix styles/components in Next.js.
 6. Re-run compare.
 7. Repeat until diff is under threshold or remaining differences are acceptable content/dynamic changes.
 
-## HubSpot noise tips
+## CI
 
-Hide dynamic junk that isn't part of the migrated design:
+This repo includes GitHub Actions CI at `.github/workflows/ci.yml`:
 
-```bash
---hide '#hs-eu-cookie-confirmation' \
---hide '.hs-cookie-notification-position-bottom' \
---hide '.chat-widget' \
---hide "iframe[src*='hubspot']" \
---hide "[class*='cookie']" \
---hide "[class*='modal']"
-```
+- `npm ci`
+- install Playwright Chromium with dependencies
+- `npm run build`
+- `npm run smoke`
 
-Use fixed viewport sizes. Compare route by route. Start with desktop, then add mobile/tablet once desktop is sane.
+The smoke fixture intentionally fails visual parity; the smoke runner treats exit code `2` as success because `2` means “comparison completed and exceeded threshold,” not “the tool crashed.”
 
 ## Project docs
 
 - `docs/HANDOFF.md` — pickup notes for future agents
 - `docs/ARCHITECTURE.md` — technical architecture
 - `docs/IMPLEMENTATION_PLAN.md` — task-by-task implementation plan
+- `docs/STATUS.md` — current implementation status and verified commands
 - `CODEX_PROMPT.md` — standalone coding-agent handoff prompt

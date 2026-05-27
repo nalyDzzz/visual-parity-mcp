@@ -29,6 +29,7 @@ const comparePagesSchema = {
   selectors: z.array(z.string()).optional(),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
   compareStyles: z.boolean().default(true)
@@ -48,6 +49,7 @@ const compareRoutesSchema = {
   selectors: z.array(z.string()).optional(),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
   compareStyles: z.boolean().default(true)
@@ -64,6 +66,7 @@ const inspectSelectorSchema = {
   timeoutMs: z.number().int().positive().default(30000),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
   maxElementsPerSelector: z.number().int().positive().default(10),
   diffLimit: z.number().int().positive().default(25)
 };

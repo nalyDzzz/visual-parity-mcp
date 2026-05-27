@@ -1,6 +1,6 @@
 # Codex task: build Visual Parity MCP + CLI
 
-You are working in `/home/dylan/Projects/visual-parity-mcp`, a TypeScript Node project scaffolded for a visual QA tool.
+You are working in the `visual-parity-mcp` repo root, a TypeScript Node project scaffolded for a visual QA tool.
 
 ## Why this exists
 
