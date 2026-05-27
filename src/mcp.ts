@@ -16,8 +16,10 @@ const viewportSchema = z
   .default({ width: 1440, height: 1200, deviceScaleFactor: 1 });
 
 const comparePagesSchema = {
-  liveUrl: z.string().url().describe("Live/source page URL"),
-  localUrl: z.string().url().describe("Local/migrated page URL"),
+  referenceUrl: z.string().url().optional().describe("Reference/source page URL"),
+  candidateUrl: z.string().url().optional().describe("Candidate/target page URL"),
+  liveUrl: z.string().url().optional().describe("Alias for referenceUrl"),
+  localUrl: z.string().url().optional().describe("Alias for candidateUrl"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   name: z.string().optional().describe("Run name / artifact subdirectory"),
   viewport: viewportSchema.optional(),
@@ -36,8 +38,10 @@ const comparePagesSchema = {
 };
 
 const compareRoutesSchema = {
-  liveBaseUrl: z.string().url().describe("Live/source base URL"),
-  localBaseUrl: z.string().url().describe("Local/migrated base URL"),
+  referenceBaseUrl: z.string().url().optional().describe("Reference/source base URL"),
+  candidateBaseUrl: z.string().url().optional().describe("Candidate/target base URL"),
+  liveBaseUrl: z.string().url().optional().describe("Alias for referenceBaseUrl"),
+  localBaseUrl: z.string().url().optional().describe("Alias for candidateBaseUrl"),
   paths: z.array(z.string()).min(1).describe("Route paths to compare"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   viewport: viewportSchema.optional(),
@@ -56,8 +60,10 @@ const compareRoutesSchema = {
 };
 
 const inspectSelectorSchema = {
-  liveUrl: z.string().url().describe("Live/source page URL"),
-  localUrl: z.string().url().describe("Local/migrated page URL"),
+  referenceUrl: z.string().url().optional().describe("Reference/source page URL"),
+  candidateUrl: z.string().url().optional().describe("Candidate/target page URL"),
+  liveUrl: z.string().url().optional().describe("Alias for referenceUrl"),
+  localUrl: z.string().url().optional().describe("Alias for candidateUrl"),
   selector: z.string().min(1).describe("CSS selector to inspect"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   name: z.string().optional().describe("Run name / artifact subdirectory"),
@@ -76,18 +82,21 @@ const server = new McpServer({
   version: "0.1.0"
 });
 
-server.tool("compare_pages", "Compare one live URL against one local URL and write visual parity artifacts", comparePagesSchema, async (input) => {
-  const report = await comparePages(input as ComparePagesOptions);
+server.tool("compare_pages", "Compare one reference URL against one candidate URL and write visual parity artifacts", comparePagesSchema, async (input) => {
+  const options = normalizePageInput(input as PageInput);
+  const report = await comparePages(options);
   return textResult(compactPageSummary(report, input.diffLimit ?? 25));
 });
 
-server.tool("compare_routes", "Compare multiple route paths under live/local base URLs", compareRoutesSchema, async (input) => {
-  const report = await compareRoutes(input as CompareRoutesOptions);
+server.tool("compare_routes", "Compare multiple route paths under reference/candidate base URLs", compareRoutesSchema, async (input) => {
+  const options = normalizeRoutesInput(input as RoutesInput);
+  const report = await compareRoutes(options);
   return textResult(compactRoutesSummary(report, input.diffLimit ?? 25));
 });
 
-server.tool("inspect_selector", "Deep inspect one selector between a live and local page", inspectSelectorSchema, async (input) => {
-  const report = await inspectSelector(input as InspectSelectorOptions);
+server.tool("inspect_selector", "Deep inspect one selector between a reference and candidate page", inspectSelectorSchema, async (input) => {
+  const options = normalizeInspectInput(input as InspectInput);
+  const report = await inspectSelector(options);
   return textResult({
     selector: report.selector,
     diffCount: report.styles.diffCount,
@@ -102,6 +111,62 @@ server.tool("inspect_selector", "Deep inspect one selector between a live and lo
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+type PageInput = Omit<ComparePagesOptions, "liveUrl" | "localUrl"> & {
+  referenceUrl?: string;
+  candidateUrl?: string;
+  liveUrl?: string;
+  localUrl?: string;
+};
+
+type RoutesInput = Omit<CompareRoutesOptions, "liveBaseUrl" | "localBaseUrl"> & {
+  referenceBaseUrl?: string;
+  candidateBaseUrl?: string;
+  liveBaseUrl?: string;
+  localBaseUrl?: string;
+};
+
+type InspectInput = Omit<InspectSelectorOptions, "liveUrl" | "localUrl"> & {
+  referenceUrl?: string;
+  candidateUrl?: string;
+  liveUrl?: string;
+  localUrl?: string;
+};
+
+function normalizePageInput(input: PageInput): ComparePagesOptions {
+  return {
+    ...input,
+    liveUrl: resolveUrlPair(input.referenceUrl, input.liveUrl, "referenceUrl", "liveUrl"),
+    localUrl: resolveUrlPair(input.candidateUrl, input.localUrl, "candidateUrl", "localUrl")
+  };
+}
+
+function normalizeRoutesInput(input: RoutesInput): CompareRoutesOptions {
+  return {
+    ...input,
+    liveBaseUrl: resolveUrlPair(input.referenceBaseUrl, input.liveBaseUrl, "referenceBaseUrl", "liveBaseUrl"),
+    localBaseUrl: resolveUrlPair(input.candidateBaseUrl, input.localBaseUrl, "candidateBaseUrl", "localBaseUrl")
+  };
+}
+
+function normalizeInspectInput(input: InspectInput): InspectSelectorOptions {
+  return {
+    ...input,
+    liveUrl: resolveUrlPair(input.referenceUrl, input.liveUrl, "referenceUrl", "liveUrl"),
+    localUrl: resolveUrlPair(input.candidateUrl, input.localUrl, "candidateUrl", "localUrl")
+  };
+}
+
+function resolveUrlPair(primary: string | undefined, alias: string | undefined, primaryName: string, aliasName: string): string {
+  if (primary && alias && primary !== alias) {
+    throw new Error(`Provide either ${primaryName} or ${aliasName}, not conflicting values for both.`);
+  }
+  const value = primary ?? alias;
+  if (!value) {
+    throw new Error(`Provide ${primaryName} (or legacy ${aliasName}).`);
+  }
+  return value;
+}
 
 function textResult(value: unknown) {
   return {

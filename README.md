@@ -1,37 +1,42 @@
 # Visual Parity MCP
 
-A local-first visual QA tool for migration work where an AI coding agent needs to match a live website 1:1 against a local rewrite.
+A local-first visual QA toolkit for comparing a **reference** web page against a **candidate** web page.
 
-Built for HubSpot → Sanity/Next.js migrations, because HubSpot CSS is a haunted landfill and copying it directly is how you summon production demons.
+Use it for website migrations, redesigns, framework rewrites, CMS rebuilds, landing page refreshes, or any cursed “make this page match that page” job where eyeballing screenshots by hand makes you want to walk into the sea.
 
-## What it does
+It includes:
+
+- a CLI: `visual-parity`
+- an MCP stdio server: `visual-parity-mcp`
+- Playwright screenshot capture
+- pixel diffs
+- computed style and bounding-box diffs
+- JSON + HTML reports
+- optional presets, including `hubspot`
+
+## What it compares
 
 Visual Parity MCP compares:
 
-- **Live source page:** e.g. `https://old-hubspot-site.com/about`
-- **Local migrated page:** e.g. `http://localhost:3000/about`
+- **Reference page:** the page you want to match, e.g. production, a competitor page, an old CMS page, or a design-system reference URL
+- **Candidate page:** the page being tested, e.g. localhost, preview deploy, staging, or the rewritten implementation
 
-It produces:
+It writes:
 
-- `live.png` screenshot
-- `local.png` screenshot
+- `live.png` reference screenshot
+- `local.png` candidate screenshot
 - `diff.png` pixel difference image
 - `report.json` full machine-readable report
 - `report.html` human-readable report
 - computed style/layout diffs for selectors like `header`, `.hero`, `h1`, `.cta`
 
-## Why not just copy HubSpot CSS?
+> Note: artifact and JSON field names still use `live` / `local` for backward compatibility. The user-facing language is now reference / candidate.
 
-Because HubSpot CSS is usually:
+## Why this exists
 
-- split across many generated files
-- order-dependent
-- loaded through CMS/module wrappers
-- polluted with global cascade
-- mixed with runtime inline styles/scripts
-- not directly portable to componentized Next.js/Tailwind
+Copying source CSS is often the wrong move. CMSs and legacy apps tend to produce CSS that is split across generated files, order-dependent, runtime-mutated, wrapper-heavy, and generally haunted as shit.
 
-Rendered output is the truth. This tool compares rendered output and tells the agent what to fix.
+Rendered output is the truth. This tool compares what the browser actually renders and gives humans or agents concrete evidence to fix.
 
 ## Install
 
@@ -54,9 +59,8 @@ CLI without installing globally:
 
 ```bash
 npx -y -p visual-parity-mcp visual-parity compare \
-  --live https://old-site.com/about \
-  --local http://localhost:3000/about \
-  --preset hubspot
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about
 ```
 
 Global install if you want both binaries on PATH:
@@ -72,6 +76,8 @@ visual-parity-mcp
 ```bash
 npm install
 npm run build
+npm link
+visual-parity --help
 ```
 
 If Chromium is missing:
@@ -85,10 +91,9 @@ npx playwright install chromium
 ### Compare one page
 
 ```bash
-node dist/cli.js compare \
-  --live https://old-site.com/about \
-  --local http://localhost:3000/about \
-  --preset hubspot \
+visual-parity compare \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about \
   --selector header \
   --selector main \
   --selector h1 \
@@ -96,31 +101,50 @@ node dist/cli.js compare \
   --selector '.cta'
 ```
 
+Legacy aliases still work:
+
+```bash
+visual-parity compare \
+  --live https://example.com/about \
+  --local http://localhost:3000/about
+```
+
 ### Compare multiple routes
 
 ```bash
-node dist/cli.js routes \
-  --live-base https://old-site.com \
-  --local-base http://localhost:3000 \
-  --preset hubspot \
+visual-parity routes \
+  --reference-base https://example.com \
+  --candidate-base http://localhost:3000 \
   --path / \
   --path /about \
   --path /pricing
 ```
 
+Legacy aliases still work:
+
+```bash
+visual-parity routes \
+  --live-base https://example.com \
+  --local-base http://localhost:3000 \
+  --path /about
+```
+
 ### Inspect one selector
 
 ```bash
-node dist/cli.js inspect \
-  --live https://old-site.com/about \
-  --local http://localhost:3000/about \
-  --preset hubspot \
+visual-parity inspect \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about \
   --selector '.hero'
 ```
 
 ## Common options
 
 ```text
+--reference <url>           Reference/source URL
+--candidate <url>           Candidate/target URL
+--live <url>                Legacy alias for --reference
+--local <url>               Legacy alias for --candidate
 --out <dir>                 Output directory, default reports/visual-parity
 --name <slug>               Run name
 --width <px>                Viewport width, default 1440
@@ -138,19 +162,23 @@ node dist/cli.js inspect \
 --json                      Print compact JSON only
 ```
 
-## HubSpot preset
+## Presets
 
-`--preset hubspot` adds a sane default bundle for this exact migration pain in the ass:
+Presets bundle useful selectors and noise masks for specific stacks. The tool is general by default; presets are optional.
 
-- common content/style selectors: `body`, `header`, `nav`, `main`, `footer`, `section`, headings, buttons, hero/CTA/card/module-ish classes
-- common HubSpot noise masks: cookie banners, HubSpot iframes/forms/chat widgets, CAPTCHA badge, aria-live regions
+### HubSpot preset
 
-You can still add extra selectors manually:
+`--preset hubspot` adds selectors/noise masks for HubSpot-backed pages:
+
+- content/style selectors: `body`, `header`, `nav`, `main`, `footer`, `section`, headings, buttons, hero/CTA/card/module-ish classes
+- noise masks: cookie banners, HubSpot iframes/forms/chat widgets, CAPTCHA badge, aria-live regions
+
+Example:
 
 ```bash
-node dist/cli.js compare \
-  --live https://old-site.com/pricing \
-  --local http://localhost:3000/pricing \
+visual-parity compare \
+  --reference https://old-site.com/pricing \
+  --candidate http://localhost:3000/pricing \
   --preset hubspot \
   --selector '.pricing-card' \
   --hide '.promo-modal'
@@ -196,8 +224,8 @@ Example `compare_pages` input:
 
 ```json
 {
-  "liveUrl": "https://old-site.com/about",
-  "localUrl": "http://localhost:3000/about",
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
   "outputDir": "reports/visual-parity",
   "name": "about",
   "viewport": { "width": 1440, "height": 1200, "deviceScaleFactor": 1 },
@@ -212,13 +240,22 @@ Example `compare_pages` input:
 }
 ```
 
-## Recommended migration workflow
+Legacy MCP fields still work:
 
-1. Start the Next.js app locally.
-2. Compare one route against the live HubSpot route using `--preset hubspot`.
+```json
+{
+  "liveUrl": "https://example.com/about",
+  "localUrl": "http://localhost:3000/about"
+}
+```
+
+## Recommended workflow
+
+1. Start or identify the candidate site/app.
+2. Run `visual-parity compare` for one route.
 3. Open `report.html` and inspect `diff.png`.
-4. Give Claude/Codex the JSON summary and report paths.
-5. Fix styles/components in Next.js.
+4. Give Claude/Codex/the poor intern the JSON summary and report paths.
+5. Fix styles/components.
 6. Re-run compare.
 7. Repeat until diff is under threshold or remaining differences are acceptable content/dynamic changes.
 

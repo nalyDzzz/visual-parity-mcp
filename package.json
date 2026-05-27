@@ -1,7 +1,7 @@
 {
   "name": "visual-parity-mcp",
   "version": "0.1.0",
-  "description": "MCP server and CLI for visual parity QA between a live site and local migration.",
+  "description": "MCP server and CLI for visual parity QA between reference and candidate web pages.",
   "type": "module",
   "bin": {
     "visual-parity": "dist/cli.js",
@@ -41,9 +41,11 @@
     "playwright",
     "visual-regression",
     "visual-testing",
+    "visual-diff",
+    "frontend",
+    "website-migration",
     "nextjs",
-    "hubspot",
-    "sanity"
+    "hubspot"
   ],
   "license": "MIT",
   "dependencies": {

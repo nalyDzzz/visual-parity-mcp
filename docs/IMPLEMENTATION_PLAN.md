@@ -2,9 +2,9 @@
 
 > **For Hermes / future agents:** This plan exists so the work can be picked up cold if Ben gets vaporized by Discord, gateway restarts, cosmic rays, or dumb bullshit.
 
-**Goal:** Build a local CLI + MCP server that compares live HubSpot pages against local Next.js migration pages and produces visual/style/layout diffs.
+**Goal:** Build a local CLI + MCP server that compares reference pages against candidate pages and produces visual/style/layout diffs.
 
-**Architecture:** Playwright captures live/local renderings under identical viewport settings. Pixelmatch generates visual diffs. Computed style extraction gives coding agents actionable CSS/layout deltas. Reports are saved to files; CLI/MCP returns compact summaries.
+**Architecture:** Playwright captures reference/candidate renderings under identical viewport settings. Pixelmatch generates visual diffs. Computed style extraction gives coding agents actionable CSS/layout deltas. Reports are saved to files; CLI/MCP returns compact summaries.
 
 **Tech Stack:** TypeScript, Node.js, Playwright, pixelmatch, pngjs, sharp, commander, @modelcontextprotocol/sdk, zod.
 
@@ -43,7 +43,7 @@ Expected: TypeScript compiles.
 
 ## Task 2: Style snapshot + diff
 
-**Objective:** Extract computed styles and bounding boxes for selectors and compare live/local snapshots.
+**Objective:** Extract computed styles and bounding boxes for selectors and compare reference/candidate snapshots.
 
 **Files:**
 
@@ -55,7 +55,7 @@ Expected: TypeScript compiles.
 
 1. Implement `captureStyleSnapshots(page, selectors, properties, maxElementsPerSelector)`.
 2. Capture selector errors without killing whole run.
-3. Implement `diffStyleSnapshots(live, local)`:
+3. Implement `diffStyleSnapshots(reference, candidate)`:
    - count mismatches
    - rect diffs > 1px
    - style property diffs
@@ -82,7 +82,7 @@ Expected: TypeScript compiles.
 
 **Steps:**
 
-1. Read live/local PNGs with `sharp` or `pngjs`.
+1. Read reference/candidate PNGs with `sharp` or `pngjs`.
 2. Create equal-size white canvases using max width/height.
 3. Composite screenshots onto canvases.
 4. Run `pixelmatch`.
@@ -107,10 +107,10 @@ Use two simple local PNG or HTML fixtures and ensure a diff image is written.
 
 1. Write `report.json` containing full comparison report.
 2. Write `report.html` with:
-   - live/local URLs
+   - reference/candidate URLs
    - pass/fail
    - diff percent
-   - live/local/diff images
+   - reference/candidate/diff images
    - top style/layout diffs
 3. Make report self-contained enough to open locally.
 
@@ -132,7 +132,7 @@ Open report path or inspect output file exists/non-empty.
 
 1. Implement `comparePages(options)`.
 2. Create stable run directory names.
-3. Capture live/local screenshots and style snapshots in same browser context settings.
+3. Capture reference/candidate screenshots and style snapshots in same browser context settings.
 4. Run pixel diff.
 5. Build `PageComparisonReport`.
 6. Write JSON/HTML reports.
@@ -189,6 +189,8 @@ Run against two local static pages with two paths.
 npm run build
 node dist/cli.js --help
 node dist/cli.js compare --help
+npm link
+visual-parity --help
 ```
 
 Expected: Help text prints.
@@ -234,8 +236,8 @@ Expected: process starts as MCP stdio server without crashing. Full MCP validati
 - Installation
 - CLI examples
 - MCP config examples
-- Migration workflow
-- HubSpot noise tips
+- General reference/candidate workflow
+- HubSpot preset/noise tips
 
 **Verification:**
 
@@ -245,7 +247,7 @@ README has enough info for another agent to run the tool with no context.
 
 ## Task 10: Smoke test
 
-**Objective:** Prove the tool works locally without real HubSpot access.
+**Objective:** Prove the tool works locally without real external site access.
 
 **Files:**
 
@@ -267,8 +269,8 @@ npm install
 npm run build
 npx playwright install chromium
 node dist/cli.js compare \
-  --live http://127.0.0.1:4173/live/index.html \
-  --local http://127.0.0.1:4173/local/index.html \
+  --reference http://127.0.0.1:4173/live/index.html \
+  --candidate http://127.0.0.1:4173/local/index.html \
   --out reports/smoke \
   --name fixture
 ```
@@ -282,6 +284,7 @@ Expected: report files exist and diff percent is > 0 for intentionally different
 - [ ] `npm install` succeeds
 - [ ] `npm run build` succeeds
 - [ ] `node dist/cli.js --help` succeeds
+- [ ] `npm link && visual-parity --help` succeeds
 - [ ] fixture smoke compare writes screenshots and reports
 - [ ] failed visual threshold exits `2`, not a generic crash
 - [ ] MCP server starts without immediate crash

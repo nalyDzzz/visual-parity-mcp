@@ -10,14 +10,16 @@ const program = new Command();
 
 program
   .name("visual-parity")
-  .description("Visual parity QA between a live site and local migration")
+  .description("Visual parity QA between a reference page and a candidate page")
   .version("0.1.0");
 
 program
   .command("compare")
-  .description("Compare one live URL against one local URL")
-  .requiredOption("--live <url>", "Live/source URL")
-  .requiredOption("--local <url>", "Local/migrated URL")
+  .description("Compare one reference URL against one candidate URL")
+  .option("--reference <url>", "Reference/source URL")
+  .option("--candidate <url>", "Candidate/target URL")
+  .option("--live <url>", "Alias for --reference")
+  .option("--local <url>", "Alias for --candidate")
   .option("--out <dir>", "Output directory", "reports/visual-parity")
   .option("--name <slug>", "Run name")
   .option("--width <px>", "Viewport width", "1440")
@@ -49,8 +51,10 @@ program
 program
   .command("routes")
   .description("Compare multiple paths under two base URLs")
-  .requiredOption("--live-base <url>", "Live/source base URL")
-  .requiredOption("--local-base <url>", "Local/migrated base URL")
+  .option("--reference-base <url>", "Reference/source base URL")
+  .option("--candidate-base <url>", "Candidate/target base URL")
+  .option("--live-base <url>", "Alias for --reference-base")
+  .option("--local-base <url>", "Alias for --candidate-base")
   .option("--path <path>", "Route path to compare", collect, [])
   .option("--paths-file <file>", "Newline-separated route paths")
   .option("--out <dir>", "Output directory", "reports/visual-parity")
@@ -74,10 +78,12 @@ program
       if (paths.length === 0) {
         throw new Error("Provide at least one --path or --paths-file entry.");
       }
+      const referenceBaseUrl = resolveUrlOption(opts.referenceBase, opts.liveBase, "--reference-base", "--live-base");
+      const candidateBaseUrl = resolveUrlOption(opts.candidateBase, opts.localBase, "--candidate-base", "--local-base");
       const options: CompareRoutesOptions = {
-        ...makeCompareOptions({ ...opts, live: "http://placeholder", local: "http://placeholder" }),
-        liveBaseUrl: opts.liveBase,
-        localBaseUrl: opts.localBase,
+        ...makeCompareOptions({ ...opts, reference: "http://placeholder", candidate: "http://placeholder" }),
+        liveBaseUrl: referenceBaseUrl,
+        localBaseUrl: candidateBaseUrl,
         paths
       };
       const report = await compareRoutes(options);
@@ -92,9 +98,11 @@ program
 
 program
   .command("inspect")
-  .description("Inspect one selector on live and local pages")
-  .requiredOption("--live <url>", "Live/source URL")
-  .requiredOption("--local <url>", "Local/migrated URL")
+  .description("Inspect one selector on reference and candidate pages")
+  .option("--reference <url>", "Reference/source URL")
+  .option("--candidate <url>", "Candidate/target URL")
+  .option("--live <url>", "Alias for --reference")
+  .option("--local <url>", "Alias for --candidate")
   .requiredOption("--selector <css>", "CSS selector to inspect")
   .option("--out <dir>", "Output directory", "reports/visual-parity")
   .option("--name <slug>", "Run name")
@@ -109,8 +117,8 @@ program
   .action(async (opts) => {
     await runCommand(async () => {
       const options: InspectSelectorOptions = {
-        liveUrl: opts.live,
-        localUrl: opts.local,
+        liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+        localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
         selector: opts.selector,
         outputDir: opts.out,
         name: opts.name,
@@ -150,8 +158,8 @@ function collect(value: string, previous: string[]): string[] {
 
 function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
   return {
-    liveUrl: opts.live,
-    localUrl: opts.local,
+    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
     outputDir: opts.out,
     name: opts.name,
     viewport: {
@@ -169,6 +177,25 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
     presets: uniqueNonEmpty(opts.preset),
     compareStyles: opts.styles !== false
   };
+}
+
+function resolveUrlOption(primary: unknown, alias: unknown, primaryFlag: string, aliasFlag: string): string {
+  const primaryValue = stringOption(primary);
+  const aliasValue = stringOption(alias);
+  if (primaryValue && aliasValue && primaryValue !== aliasValue) {
+    throw new Error(`Provide either ${primaryFlag} or ${aliasFlag}, not conflicting values for both.`);
+  }
+  const value = primaryValue ?? aliasValue;
+  if (!value) {
+    throw new Error(`Provide ${primaryFlag} (or legacy ${aliasFlag}).`);
+  }
+  return value;
+}
+
+function stringOption(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 async function runCommand(fn: () => Promise<void>): Promise<void> {
@@ -212,8 +239,8 @@ function compactRoutesSummary(report: RoutesComparisonReport) {
 
 function printPageReport(report: PageComparisonReport): void {
   console.log(`Visual parity: ${report.visual.passed ? "PASS" : "FAIL"}`);
-  console.log(`Live:  ${report.liveUrl}`);
-  console.log(`Local: ${report.localUrl}`);
+  console.log(`Reference: ${report.liveUrl}`);
+  console.log(`Candidate: ${report.localUrl}`);
   console.log(`Diff:  ${report.visual.diffPercent.toFixed(3)}% (max ${report.visual.maxDiffPercent.toFixed(3)}%)`);
   console.log("Artifacts:");
   console.log(`  report: ${report.reportHtml}`);
@@ -228,6 +255,8 @@ function printPageReport(report: PageComparisonReport): void {
 
 function printRoutesReport(report: RoutesComparisonReport): void {
   console.log(`Visual parity routes: ${report.failed === 0 ? "PASS" : "FAIL"}`);
+  console.log(`Reference base: ${report.liveBaseUrl}`);
+  console.log(`Candidate base: ${report.localBaseUrl}`);
   console.log(`Routes: ${report.total} total, ${report.passed} passed, ${report.failed} failed`);
   console.log(`Average diff: ${report.averageDiffPercent.toFixed(3)}%`);
   console.log(`Summary: ${report.summaryHtml}`);

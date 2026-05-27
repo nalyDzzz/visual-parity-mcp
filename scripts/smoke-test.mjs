@@ -26,9 +26,9 @@ const child = spawn(
   [
     "dist/cli.js",
     "compare",
-    "--live",
+    "--reference",
     `http://127.0.0.1:${port}/live/index.html`,
-    "--local",
+    "--candidate",
     `http://127.0.0.1:${port}/local/index.html`,
     "--out",
     "reports/smoke",

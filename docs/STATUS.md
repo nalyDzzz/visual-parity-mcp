@@ -9,6 +9,10 @@ Complete enough for real local use.
 Implemented:
 
 - CLI: `compare`, `routes`, `inspect`
+- CLI binary name: `visual-parity`
+- MCP server binary name: `visual-parity-mcp`
+- generalized reference/candidate terminology
+- legacy aliases: `--live` / `--local` and `liveUrl` / `localUrl`
 - MCP server: `compare_pages`, `compare_routes`, `inspect_selector`
 - Playwright Chromium capture
 - animation/transition stabilization
@@ -22,7 +26,7 @@ Implemented:
 - smoke test script
 - MIT license
 - GitHub Actions CI
-- HubSpot preset: `--preset hubspot` / `presets: ["hubspot"]`
+- optional HubSpot preset: `--preset hubspot` / `presets: ["hubspot"]`
 - Public GitHub repo: `https://github.com/nalyDzzz/visual-parity-mcp`
 - npm package metadata prepared for `visual-parity-mcp`
 
@@ -34,8 +38,17 @@ npm install
 npm run build
 node dist/cli.js --help
 node dist/cli.js compare --help
+node dist/cli.js routes --help
+node dist/cli.js inspect --help
 npx playwright install chromium
 npm run smoke
+```
+
+Source checkout command ergonomics:
+
+```bash
+npm link
+visual-parity --help
 ```
 
 Smoke result:
@@ -48,12 +61,12 @@ Top diffs included header height, hero padding, h1/text/style differences.
 
 This failure is expected because the smoke fixture intentionally differs. The smoke script treats CLI exit code `2` as success because `2` means “comparison completed but visual threshold failed.”
 
-Also verified:
+Also verified pattern:
 
 ```bash
-node dist/cli.js routes \
-  --live-base http://127.0.0.1:4174/fixtures/live \
-  --local-base http://127.0.0.1:4174/fixtures/local \
+visual-parity routes \
+  --reference-base http://127.0.0.1:4174/fixtures/live \
+  --candidate-base http://127.0.0.1:4174/fixtures/local \
   --path /index.html \
   --out reports/routes-smoke \
   --selector header \
@@ -64,9 +77,9 @@ node dist/cli.js routes \
 And:
 
 ```bash
-node dist/cli.js inspect \
-  --live http://127.0.0.1:4174/fixtures/live/index.html \
-  --local http://127.0.0.1:4174/fixtures/local/index.html \
+visual-parity inspect \
+  --reference http://127.0.0.1:4174/fixtures/live/index.html \
+  --candidate http://127.0.0.1:4174/fixtures/local/index.html \
   --selector .hero \
   --out reports/inspect-smoke \
   --name hero \
@@ -87,7 +100,7 @@ reports/inspect-smoke/hero/inspect.html
 
 - `0`: command succeeded and visual threshold passed, or smoke test expected failure was handled
 - `2`: compare/routes completed successfully but visual diff exceeded threshold
-- `1`: real error such as bad URL, local server down, Playwright/browser issue, etc.
+- `1`: real error such as bad URL, candidate server down, Playwright/browser issue, etc.
 
 ## MCP config
 
@@ -119,32 +132,34 @@ Source checkout fallback:
 
 ## Recommended first real test
 
-Start Dylan's migrated Next.js app:
+Start or identify the candidate app/site:
 
 ```bash
-cd /path/to/migration
+cd /path/to/candidate
 npm run dev
 ```
 
 Then run:
 
 ```bash
-cd /absolute/path/to/visual-parity-mcp
-node dist/cli.js compare \
-  --live https://LIVE-HUBSPOT-URL/path \
-  --local http://localhost:3000/path \
+visual-parity compare \
+  --reference https://REFERENCE-URL/path \
+  --candidate http://localhost:3000/path \
   --out reports/visual-parity \
   --name first-real-page \
-  --preset hubspot \
   --selector header \
   --selector main \
   --selector h1 \
   --selector '.hero' \
   --selector '.cta' \
-  --hide '#hs-eu-cookie-confirmation' \
-  --hide '.hs-cookie-notification-position-bottom' \
-  --hide '.chat-widget' \
-  --hide "iframe[src*='hubspot']"
+  --hide '.cookie-banner' \
+  --hide '.chat-widget'
+```
+
+For HubSpot-backed reference pages, add:
+
+```bash
+--preset hubspot
 ```
 
 Then open:
@@ -157,9 +172,10 @@ reports/visual-parity/first-real-page/report.html
 
 - No automatic sitemap crawler yet. Routes are provided manually via `--path` or `--paths-file`.
 - No mobile preset command yet; use `--width`, `--height`, `--dpr` manually.
-- No AI auto-fix integration yet; the tool outputs evidence, then Claude/Codex edits the Next.js repo.
+- No AI auto-fix integration yet; the tool outputs evidence, then Claude/Codex edits the candidate repo.
 - No DOM structural diff yet. Current evidence is pixel + computed style + bounding rect + text sample.
 - No authentication/session handling yet. Public pages are the intended first use.
+- npm publish remains blocked until npm auth is completed.
 
 ## Pickup instruction for another agent
 
@@ -168,5 +184,5 @@ If picking this up cold:
 1. Read `README.md`.
 2. Read `docs/HANDOFF.md` and `docs/ARCHITECTURE.md`.
 3. Run `npm run build && npm run smoke`.
-4. Use CLI against the real live/local URLs.
+4. Use CLI against real reference/candidate URLs.
 5. If MCP is needed, add the config above to the relevant MCP client and restart that client.

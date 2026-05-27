@@ -2,9 +2,9 @@
 
 ## Goal
 
-Compare a production/live source page against a local migration page and produce machine-actionable evidence about visual differences.
+Compare a reference web page against a candidate web page and produce machine-actionable evidence about visual differences.
 
-This is specifically for HubSpot → Sanity/Next.js migrations where the original CSS cannot be cleanly reused.
+This works for migrations, redesigns, preview deploys, CMS rebuilds, and framework rewrites. The project started from a HubSpot → Sanity/Next.js migration, but the core architecture is deliberately general; HubSpot support lives in an optional preset.
 
 ## Components
 
@@ -15,8 +15,8 @@ CLI / MCP Tool Call
 compare engine
         |
         +--> Playwright browser capture
-        |       - open live URL
-        |       - open local URL
+        |       - open reference URL
+        |       - open candidate URL
         |       - same viewport/DPR
         |       - disable animations
         |       - hide noisy selectors
@@ -35,7 +35,7 @@ compare engine
         |       - compare short text samples
         |
         +--> report writer
-                - live.png/local.png/diff.png
+                - live.png/local.png/diff.png (legacy filenames for reference/candidate/diff)
                 - report.json
                 - report.html
 ```
@@ -139,12 +139,12 @@ Deep-dive one selector between two pages. Useful after a failed compare when the
 
 ## Why not CSS extraction?
 
-HubSpot CSS is often:
+Source CSS from legacy sites, CMSs, builders, and production apps is often:
 
 - split across many generated files
-- tied to module wrappers and CMS-generated classes
+- tied to wrappers, generated classes, and runtime DOM shape
 - polluted by global cascade/order dependencies
 - dependent on runtime scripts and inline styles
-- not compatible with componentized Next.js/Tailwind architecture
+- not directly portable to a new component architecture
 
-Rendered visual comparison is the useful invariant. Pixel output, bounding boxes, and computed styles tell us what matters without worshipping HubSpot's cursed CSS sewer.
+Rendered visual comparison is the useful invariant. Pixel output, bounding boxes, and computed styles tell us what matters without worshipping somebody else's cursed CSS sewer.

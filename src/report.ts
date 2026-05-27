@@ -55,8 +55,8 @@ function renderPageReport(report: PageComparisonReport): string {
     <section>
       <h2>Screenshots</h2>
       <div class="grid three">
-        ${imageCard("Live", liveImg)}
-        ${imageCard("Local", localImg)}
+        ${imageCard("Reference", liveImg)}
+        ${imageCard("Candidate", localImg)}
         ${imageCard("Diff", diffImg)}
       </div>
     </section>
@@ -89,15 +89,15 @@ function renderInspectReport(report: InspectSelectorReport): string {
       </div>
       <dl>
         <div><dt>Diffs</dt><dd>${report.styles.diffCount}</dd></div>
-        <div><dt>Live count</dt><dd>${report.styles.live[0]?.count ?? 0}</dd></div>
-        <div><dt>Local count</dt><dd>${report.styles.local[0]?.count ?? 0}</dd></div>
+        <div><dt>Reference count</dt><dd>${report.styles.live[0]?.count ?? 0}</dd></div>
+        <div><dt>Candidate count</dt><dd>${report.styles.local[0]?.count ?? 0}</dd></div>
       </dl>
     </section>
     <section>
       <h2>First match crops</h2>
       <div class="grid two">
-        ${liveCrop ? imageCard("Live crop", liveCrop) : "<p>No live crop.</p>"}
-        ${localCrop ? imageCard("Local crop", localCrop) : "<p>No local crop.</p>"}
+        ${liveCrop ? imageCard("Reference crop", liveCrop) : "<p>No reference crop.</p>"}
+        ${localCrop ? imageCard("Candidate crop", localCrop) : "<p>No candidate crop.</p>"}
       </div>
     </section>
     <section>
@@ -133,7 +133,7 @@ function renderRoutesSummary(report: RoutesComparisonReport): string {
     </section>
     <section>
       <h2>Routes</h2>
-      <table><thead><tr><th>Status</th><th>Local URL</th><th>Diff</th><th>Report</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Status</th><th>Candidate URL</th><th>Diff</th><th>Report</th></tr></thead><tbody>${rows}</tbody></table>
     </section>`
   );
 }
@@ -151,7 +151,7 @@ export function formatDiff(diff: StyleDiff): string {
   const index = typeof diff.index === "number" ? `[${diff.index}]` : "";
   const prop = diff.property ? ` ${diff.property}` : "";
   const delta = typeof diff.delta === "number" ? ` delta=${diff.delta}` : "";
-  return `${diff.selector}${index} ${diff.kind}${prop} live=${diff.live ?? ""} local=${diff.local ?? ""}${delta}`;
+  return `${diff.selector}${index} ${diff.kind}${prop} reference=${diff.live ?? ""} candidate=${diff.local ?? ""}${delta}`;
 }
 
 function htmlShell(title: string, body: string): string {
