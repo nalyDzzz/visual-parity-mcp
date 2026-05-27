@@ -13,7 +13,8 @@
     "compare": "tsx src/cli.ts compare",
     "routes": "tsx src/cli.ts routes",
     "inspect": "tsx src/cli.ts inspect",
-    "check": "npm run build && node dist/cli.js --help"
+    "check": "npm run build && node dist/cli.js --help",
+    "smoke": "node scripts/smoke-test.mjs"
   },
   "keywords": [
     "mcp",

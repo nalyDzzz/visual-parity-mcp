@@ -45,6 +45,8 @@ export interface InspectSelectorOptions {
   threshold?: number;
   styleProperties?: string[];
   hideSelectors?: string[];
+  maxElementsPerSelector?: number;
+  diffLimit?: number;
 }
 
 export interface StyleElementSnapshot {
@@ -120,4 +122,27 @@ export interface RoutesComparisonReport {
   failed: number;
   averageDiffPercent: number;
   results: PageComparisonReport[];
+  summaryJson: string;
+  summaryHtml: string;
+}
+
+export interface InspectSelectorReport {
+  liveUrl: string;
+  localUrl: string;
+  selector: string;
+  runDir: string;
+  createdAt: string;
+  viewport: ViewportOptions;
+  screenshots: {
+    liveCrop?: string;
+    localCrop?: string;
+  };
+  styles: {
+    diffCount: number;
+    diffs: StyleDiff[];
+    live: StyleSelectorSnapshot[];
+    local: StyleSelectorSnapshot[];
+  };
+  reportJson: string;
+  reportHtml: string;
 }
