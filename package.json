@@ -1,0 +1,42 @@
+{
+  "name": "visual-parity-mcp",
+  "version": "0.1.0",
+  "description": "MCP server and CLI for visual parity QA between a live site and local migration.",
+  "type": "module",
+  "bin": {
+    "visual-parity": "./dist/cli.js",
+    "visual-parity-mcp": "./dist/mcp.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev:mcp": "tsx src/mcp.ts",
+    "compare": "tsx src/cli.ts compare",
+    "routes": "tsx src/cli.ts routes",
+    "inspect": "tsx src/cli.ts inspect",
+    "check": "npm run build && node dist/cli.js --help"
+  },
+  "keywords": [
+    "mcp",
+    "playwright",
+    "visual-regression",
+    "nextjs",
+    "hubspot",
+    "sanity"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "commander": "latest",
+    "pixelmatch": "latest",
+    "playwright": "latest",
+    "pngjs": "latest",
+    "sharp": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pngjs": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

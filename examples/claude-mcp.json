@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "visual-parity": {
+      "command": "node",
+      "args": ["/home/dylan/Projects/visual-parity-mcp/dist/mcp.js"],
+      "env": {}
+    }
+  }
+}
