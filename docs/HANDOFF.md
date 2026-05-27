@@ -18,6 +18,12 @@ Path:
 /absolute/path/to/visual-parity-mcp
 ```
 
+Public GitHub repo:
+
+```text
+https://github.com/nalyDzzz/visual-parity-mcp
+```
+
 Primary deliverables:
 
 - CLI binary: `visual-parity`
@@ -157,7 +163,8 @@ npx playwright install chromium
 
 - Codex CLI was not on PATH when scaffold was created.
 - Claude CLI exists on this host, but this repo should be implementable by any coding agent.
-- MCP config examples must use absolute path to `dist/mcp.js` unless installed globally.
+- MCP can be run from npm with `npx -y visual-parity-mcp` after the package is published.
+- Source checkout MCP config examples must use an absolute path to `dist/mcp.js`.
 
 ## Success criteria
 

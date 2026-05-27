@@ -23,6 +23,8 @@ Implemented:
 - MIT license
 - GitHub Actions CI
 - HubSpot preset: `--preset hubspot` / `presets: ["hubspot"]`
+- Public GitHub repo: `https://github.com/nalyDzzz/visual-parity-mcp`
+- npm package metadata prepared for `visual-parity-mcp`
 
 ## Verified commands
 
@@ -88,6 +90,21 @@ reports/inspect-smoke/hero/inspect.html
 - `1`: real error such as bad URL, local server down, Playwright/browser issue, etc.
 
 ## MCP config
+
+Recommended after npm publish:
+
+```json
+{
+  "mcpServers": {
+    "visual-parity": {
+      "command": "npx",
+      "args": ["-y", "visual-parity-mcp"]
+    }
+  }
+}
+```
+
+Source checkout fallback:
 
 ```json
 {

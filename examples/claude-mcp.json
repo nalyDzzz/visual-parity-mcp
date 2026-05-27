@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "visual-parity": {
-      "command": "node",
-      "args": ["/absolute/path/to/visual-parity-mcp/dist/mcp.js"],
+      "command": "npx",
+      "args": ["-y", "visual-parity-mcp"],
       "env": {}
     }
   }

@@ -35,6 +35,40 @@ Rendered output is the truth. This tool compares rendered output and tells the a
 
 ## Install
 
+### From npm
+
+MCP server via `npx`:
+
+```json
+{
+  "mcpServers": {
+    "visual-parity": {
+      "command": "npx",
+      "args": ["-y", "visual-parity-mcp"]
+    }
+  }
+}
+```
+
+CLI without installing globally:
+
+```bash
+npx -y -p visual-parity-mcp visual-parity compare \
+  --live https://old-site.com/about \
+  --local http://localhost:3000/about \
+  --preset hubspot
+```
+
+Global install if you want both binaries on PATH:
+
+```bash
+npm install -g visual-parity-mcp
+visual-parity --help
+visual-parity-mcp
+```
+
+### From source
+
 ```bash
 npm install
 npm run build
@@ -126,7 +160,20 @@ Don't hide real page content unless it is dynamic/noisy. The point is visual tru
 
 ## MCP usage
 
-After building, configure your MCP client to run this repo's built server:
+Recommended npm / `npx` config:
+
+```json
+{
+  "mcpServers": {
+    "visual-parity": {
+      "command": "npx",
+      "args": ["-y", "visual-parity-mcp"]
+    }
+  }
+}
+```
+
+Source checkout config after building:
 
 ```json
 {

@@ -7,6 +7,25 @@
     "visual-parity": "./dist/cli.js",
     "visual-parity-mcp": "./dist/mcp.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nalyDzzz/visual-parity-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nalyDzzz/visual-parity-mcp/issues"
+  },
+  "homepage": "https://github.com/nalyDzzz/visual-parity-mcp#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev:mcp": "tsx src/mcp.ts",
@@ -14,12 +33,14 @@
     "routes": "tsx src/cli.ts routes",
     "inspect": "tsx src/cli.ts inspect",
     "check": "npm run build && node dist/cli.js --help",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "playwright",
     "visual-regression",
+    "visual-testing",
     "nextjs",
     "hubspot",
     "sanity"
