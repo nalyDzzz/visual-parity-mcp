@@ -14,6 +14,7 @@ Implemented:
 - generalized reference/candidate terminology
 - legacy aliases: `--live` / `--local` and `liveUrl` / `localUrl`
 - MCP server: `compare_pages`, `compare_routes`, `inspect_selector`
+- configurable navigation readiness via `waitUntil` / `--wait-until`
 - Playwright Chromium capture
 - animation/transition stabilization
 - noisy selector hiding via `visibility: hidden !important`
@@ -147,6 +148,7 @@ visual-parity compare \
   --candidate http://localhost:3000/path \
   --out reports/visual-parity \
   --name first-real-page \
+  --wait-until domcontentloaded \
   --selector header \
   --selector main \
   --selector h1 \

@@ -7,6 +7,11 @@ import { formatDiff } from "./report.js";
 import { compareRoutes } from "./routes.js";
 import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport } from "./types.js";
 
+const waitUntilSchema = z
+  .enum(["commit", "domcontentloaded", "load", "networkidle"])
+  .default("networkidle")
+  .describe("Playwright navigation readiness state. Use 'domcontentloaded' for dev servers with persistent HMR/websocket connections.");
+
 const viewportSchema = z
   .object({
     width: z.number().int().positive().default(1440),
@@ -24,6 +29,7 @@ const comparePagesSchema = {
   name: z.string().optional().describe("Run name / artifact subdirectory"),
   viewport: viewportSchema.optional(),
   fullPage: z.boolean().default(false),
+  waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
   threshold: z.number().min(0).max(1).default(0.1),
@@ -46,6 +52,7 @@ const compareRoutesSchema = {
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   viewport: viewportSchema.optional(),
   fullPage: z.boolean().default(false),
+  waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
   threshold: z.number().min(0).max(1).default(0.1),
@@ -68,6 +75,7 @@ const inspectSelectorSchema = {
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   name: z.string().optional().describe("Run name / artifact subdirectory"),
   viewport: viewportSchema.optional(),
+  waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
   styleProperties: z.array(z.string()).optional(),

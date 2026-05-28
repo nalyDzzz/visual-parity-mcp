@@ -151,6 +151,7 @@ visual-parity inspect \
 --height <px>               Viewport height, default 1200
 --dpr <number>              Device scale factor, default 1
 --full-page                 Capture full-page screenshots
+--wait-until <state>        Navigation readiness state, default networkidle
 --wait-ms <ms>              Extra wait after page load, default 1000
 --timeout-ms <ms>           Navigation timeout, default 30000
 --threshold <number>        pixelmatch threshold, default 0.1
@@ -161,6 +162,14 @@ visual-parity inspect \
 --no-styles                 Disable computed style extraction
 --json                      Print compact JSON only
 ```
+
+For local dev servers that keep websocket/HMR connections open, such as `next dev` or Vite dev mode, use:
+
+```bash
+--wait-until domcontentloaded
+```
+
+The default `networkidle` is still useful for quieter production/staging pages, but dev servers may never become network-idle.
 
 ## Presets
 
@@ -230,6 +239,7 @@ Example `compare_pages` input:
   "name": "about",
   "viewport": { "width": 1440, "height": 1200, "deviceScaleFactor": 1 },
   "fullPage": false,
+  "waitUntil": "domcontentloaded",
   "waitMs": 1000,
   "threshold": 0.1,
   "maxDiffPercent": 1,

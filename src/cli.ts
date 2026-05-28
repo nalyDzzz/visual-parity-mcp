@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { comparePages, inspectSelector } from "./compare.js";
 import { formatDiff } from "./report.js";
 import { compareRoutes, readPathsFile } from "./routes.js";
-import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport } from "./types.js";
+import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, WaitUntil } from "./types.js";
 import { toNumber, uniqueNonEmpty } from "./utils.js";
 
 const program = new Command();
@@ -26,6 +26,7 @@ program
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
   .option("--full-page", "Capture full-page screenshots", false)
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
   .option("--threshold <number>", "pixelmatch threshold", "0.1")
@@ -62,6 +63,7 @@ program
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
   .option("--full-page", "Capture full-page screenshots", false)
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
   .option("--threshold <number>", "pixelmatch threshold", "0.1")
@@ -109,6 +111,7 @@ program
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
@@ -127,6 +130,7 @@ program
           height: toNumber(opts.height, 1200),
           deviceScaleFactor: toNumber(opts.dpr, 1)
         },
+        waitUntil: parseWaitUntil(opts.waitUntil),
         waitMs: toNumber(opts.waitMs, 1000),
         timeoutMs: toNumber(opts.timeoutMs, 30000),
         hideSelectors: uniqueNonEmpty(opts.hide),
@@ -168,6 +172,7 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
       deviceScaleFactor: toNumber(opts.dpr, 1)
     },
     fullPage: Boolean(opts.fullPage),
+    waitUntil: parseWaitUntil(opts.waitUntil),
     waitMs: toNumber(opts.waitMs, 1000),
     timeoutMs: toNumber(opts.timeoutMs, 30000),
     threshold: toNumber(opts.threshold, 0.1),
@@ -196,6 +201,13 @@ function stringOption(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseWaitUntil(value: unknown): WaitUntil {
+  if (value === "commit" || value === "domcontentloaded" || value === "load" || value === "networkidle") {
+    return value;
+  }
+  throw new Error("Invalid --wait-until value. Expected one of: commit, domcontentloaded, load, networkidle.");
 }
 
 async function runCommand(fn: () => Promise<void>): Promise<void> {
