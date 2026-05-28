@@ -19,6 +19,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Noisy-element masking with custom selectors
 - Built-in `hubspot` preset for common HubSpot and CookieYes page noise
 - Built-in `nextjs-fonts` preset for next/font fallback font-family noise
+- Built-in `dev-toolbars` preset for local feedback/debug toolbar overlays
 - Configurable Playwright `waitUntil` behavior for local dev servers
 
 ## Requirements
@@ -219,7 +220,7 @@ visual-parity inspect \
 --selector <css>            Repeatable selector for style/layout extraction
 --hide <css>                Repeatable selector to hide before screenshot
 --config <file>             Config file, default .visual-parity.json
---preset <name>             Repeatable preset bundle; currently: hubspot, nextjs-fonts
+--preset <name>             Repeatable preset bundle; currently: hubspot, nextjs-fonts, dev-toolbars
 --no-styles                 Disable computed-style extraction
 --json                      Print compact JSON only
 ```
@@ -235,6 +236,7 @@ Style/layout diffs are analyzed before reports are written:
 - width/height layout diffs are kept but lower-prioritized because they are often downstream symptoms
 - common fixes are synthesized for high-signal clusters such as missing `box-sizing: border-box`
 - same-origin stylesheets and inline styles are reported as provenance using a cascade-aware rule winner when the browser can read matching CSS rules
+- root-cause displays prioritize repeated findings and summarize hidden one-off tail findings
 
 Instead of reading dozens of repeated entries, the report can now show a single finding such as:
 
@@ -333,7 +335,7 @@ visual-parity compare \
   --wait-until domcontentloaded
 ```
 
-The preset adds common content selectors and masks common noisy elements such as HubSpot/CookieYes cookie banners, HubSpot forms, chat widgets, CAPTCHA badges, and aria-live regions. Broad class selectors for card/module elements use whole-class matching, so project-specific names such as `feature-card__item` or `home-hero__module` do not explode into count noise just because they contain those words.
+The preset adds common content selectors and masks common noisy elements such as HubSpot/CookieYes cookie banners and `.cky-*` controls, HubSpot forms, chat widgets, CAPTCHA badges, and aria-live regions. Broad class selectors for card/module elements use whole-class matching, so project-specific names such as `feature-card__item` or `home-hero__module` do not explode into count noise just because they contain those words.
 
 You can add more masks with `--hide` or `hideSelectors`.
 

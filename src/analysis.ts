@@ -150,12 +150,14 @@ function clusterStyleDiffs(diffs: StyleDiff[], pageDiffPercent = 0): StyleDiffCl
       selectors: [diff.selector],
       examples: [diff],
       priority: priorityFor(diff),
+      severity: severityFor(1),
       suggestedFix: suggestedFixFor(diff)
     });
   }
 
   const clusters = Array.from(byKey.values());
   for (const cluster of clusters) {
+    cluster.severity = severityFor(cluster.count);
     cluster.estimatedResolution = {
       diffs: cluster.count,
       diffPercent: diffs.length === 0 ? 0 : Number(((pageDiffPercent * cluster.count) / diffs.length).toFixed(4))
@@ -223,6 +225,12 @@ function priorityRank(priority: StyleDiffCluster["priority"]): number {
   if (priority === "high") return 3;
   if (priority === "medium") return 2;
   return 1;
+}
+
+function severityFor(count: number): StyleDiffCluster["severity"] {
+  if (count >= 10) return "critical";
+  if (count >= 3) return "major";
+  return "minor";
 }
 
 function unique(values: string[]): string[] {

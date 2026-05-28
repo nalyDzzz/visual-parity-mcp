@@ -37,9 +37,15 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
       "[class*='hs-cookie' i]",
       "[class*='cookie' i]",
       ".cky-consent-container",
+      ".cky-consent-bar",
       ".cky-modal",
       ".cky-overlay",
+      ".cky-btn",
+      ".cky-btn-customize",
+      ".cky-btn-reject",
+      ".cky-btn-accept",
       "[class^='cky-' i]",
+      "[class*='cky-' i]",
       "[class*=' cky-' i]",
       "[id^='cky-' i]",
       "iframe[src*='hubspot']",
@@ -63,6 +69,15 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
         pattern: "Fallback",
         reason: "Ignore next/font generated fallback font-family names."
       }
+    ]
+  },
+  "dev-toolbars": {
+    hideSelectors: [
+      "[class^='styles-module__']",
+      "[class*=' styles-module__']",
+      "[data-agentation]",
+      "[data-agentation-toolbar]",
+      "[aria-label*='Agentation' i]"
     ]
   }
 };

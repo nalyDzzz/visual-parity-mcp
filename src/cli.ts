@@ -148,7 +148,8 @@ program
         reportHtml: report.reportHtml,
         screenshots: report.screenshots,
         topDiffs: report.styles.diffs.slice(0, 25).map(formatDiff),
-        topRootCauses: report.styles.analysis?.clusters.slice(0, 10).map(formatCluster) ?? []
+        topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], 10).map(formatCluster),
+        remainingRootCauses: remainingRootCauseCount(report.styles.analysis?.clusters ?? [], 10)
       };
       console.log(opts.json ? JSON.stringify(summary, null, 2) : humanInspectSummary(summary));
     });
@@ -235,7 +236,8 @@ function compactPageSummary(report: PageComparisonReport) {
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
     topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? [],
-    topRootCauses: report.styles?.analysis?.clusters.slice(0, 10).map(formatCluster) ?? []
+    topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], 10).map(formatCluster),
+    remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], 10)
   };
 }
 
@@ -267,13 +269,16 @@ function printPageReport(report: PageComparisonReport): void {
   console.log(`  json:   ${report.reportJson}`);
   console.log(`  diff:   ${report.screenshots.diff}`);
   const diffs = report.styles?.diffs.slice(0, 10) ?? [];
-  const clusters = report.styles?.analysis?.clusters.slice(0, 10) ?? [];
+  const allClusters = report.styles?.analysis?.clusters ?? [];
+  const clusters = prioritizedRootCauses(allClusters, 10);
   if (clusters.length > 0) {
     console.log("Top root causes:");
     for (const cluster of clusters) {
-      console.log(`  ${formatCluster(cluster)} (${cluster.count} diffs)`);
+      console.log(`  ${formatCluster(cluster)} (${cluster.severity}, ${cluster.count} diffs)`);
       if (cluster.suggestedFix) console.log(`    fix: ${cluster.suggestedFix}`);
     }
+    const hiddenCount = remainingRootCauseCount(allClusters, 10);
+    if (hiddenCount > 0) console.log(`  ${hiddenCount} minor one-off root causes hidden`);
   } else if (diffs.length > 0) {
     console.log("Top diffs:");
     for (const diff of diffs) console.log(`  ${formatDiff(diff)}`);
@@ -300,7 +305,7 @@ function printRoutesReport(report: RoutesComparisonReport): void {
   }
 }
 
-function humanInspectSummary(summary: { selector: string; diffCount: number; reportJson: string; reportHtml: string; screenshots: unknown; topDiffs: string[]; topRootCauses: string[] }): string {
+function humanInspectSummary(summary: { selector: string; diffCount: number; reportJson: string; reportHtml: string; screenshots: unknown; topDiffs: string[]; topRootCauses: string[]; remainingRootCauses: number }): string {
   const lines = [
     `Selector inspect: ${summary.selector}`,
     `Diffs: ${summary.diffCount}`,
@@ -311,9 +316,19 @@ function humanInspectSummary(summary: { selector: string; diffCount: number; rep
   if (summary.topRootCauses.length > 0) {
     lines.push("Top root causes:");
     for (const cluster of summary.topRootCauses.slice(0, 10)) lines.push(`  ${cluster}`);
+    if (summary.remainingRootCauses > 0) lines.push(`  ${summary.remainingRootCauses} minor one-off root causes hidden`);
   } else if (summary.topDiffs.length > 0) {
     lines.push("Top diffs:");
     for (const diff of summary.topDiffs.slice(0, 10)) lines.push(`  ${diff}`);
   }
   return lines.join("\n");
+}
+
+function prioritizedRootCauses<T extends { count: number }>(clusters: T[], limit: number): T[] {
+  const repeated = clusters.filter((cluster) => cluster.count >= 2);
+  return (repeated.length > 0 ? repeated : clusters).slice(0, limit);
+}
+
+function remainingRootCauseCount<T extends { count: number }>(clusters: T[], limit: number): number {
+  return Math.max(0, clusters.length - prioritizedRootCauses(clusters, limit).length);
 }

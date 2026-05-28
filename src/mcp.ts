@@ -128,7 +128,8 @@ server.tool("inspect_selector", "Deep inspect one selector between a reference a
     liveCount: report.styles.live[0]?.count ?? 0,
     localCount: report.styles.local[0]?.count ?? 0,
     topDiffs: report.styles.diffs.slice(0, input.diffLimit ?? 25).map(formatDiff),
-    topRootCauses: report.styles.analysis?.clusters.slice(0, input.diffLimit ?? 25).map(formatCluster) ?? []
+    topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], input.diffLimit ?? 25).map(formatCluster),
+    remainingRootCauses: remainingRootCauseCount(report.styles.analysis?.clusters ?? [], input.diffLimit ?? 25)
   });
 });
 
@@ -214,14 +215,16 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
     reportHtml: report.reportHtml,
     styleDiffCount: report.styles?.diffCount ?? 0,
     rawStyleDiffCount: report.styles?.rawDiffCount ?? report.styles?.diffCount ?? 0,
-    topRootCauses: report.styles?.analysis?.clusters.slice(0, limit).map((cluster) => ({
+    topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], limit).map((cluster) => ({
       finding: formatCluster(cluster),
       count: cluster.count,
+      severity: cluster.severity,
       selectors: cluster.selectors,
       estimatedResolution: cluster.estimatedResolution,
       suggestedFix: cluster.suggestedFix,
       examples: cluster.examples.slice(0, 3).map(formatDiff)
     })) ?? [],
+    remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], limit),
     topDiffs: report.styles?.diffs.slice(0, limit).map(formatDiff) ?? []
   };
 }
@@ -254,4 +257,13 @@ function compactRoutesSummary(report: RoutesComparisonReport, limit: number) {
       topDiffs: result.styles?.diffs.slice(0, Math.min(limit, 10)).map(formatDiff) ?? []
     }))
   };
+}
+
+function prioritizedRootCauses<T extends { count: number }>(clusters: T[], limit: number): T[] {
+  const repeated = clusters.filter((cluster) => cluster.count >= 2);
+  return (repeated.length > 0 ? repeated : clusters).slice(0, limit);
+}
+
+function remainingRootCauseCount<T extends { count: number }>(clusters: T[], limit: number): number {
+  return Math.max(0, clusters.length - prioritizedRootCauses(clusters, limit).length);
 }

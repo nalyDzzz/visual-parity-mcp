@@ -23,7 +23,7 @@ export async function captureStyleSnapshots(
             const styleSources: Record<string, Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }>> = {};
             for (const prop of props) {
               styles[prop] = style.getPropertyValue(prop);
-              styleSources[prop] = findStyleSources(element, prop);
+              styleSources[prop] = findStyleSources(element, prop, styles[prop]);
             }
             return {
               selector: selectorArg,
@@ -41,7 +41,7 @@ export async function captureStyleSnapshots(
             };
           });
 
-          function findStyleSources(element: Element, property: string): Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }> {
+          function findStyleSources(element: Element, property: string, computedValue: string): Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }> {
             const targets = inheritedProperty(property) ? ancestorChain(element) : [element];
             const candidateProperties = sourceProperties(property);
 
@@ -50,6 +50,7 @@ export async function captureStyleSnapshots(
                 type: "inline" | "rule";
                 href?: string;
                 selectorText?: string;
+                declaredProperty: string;
                 value: string;
                 important: boolean;
                 specificity: [number, number, number];
@@ -62,6 +63,7 @@ export async function captureStyleSnapshots(
                 if (inlineValue) {
                   declarations.push({
                     type: "inline",
+                    declaredProperty: inlineValue.property,
                     value: inlineValue.value,
                     important: inlineValue.important,
                     specificity: [1, 0, 0],
@@ -80,7 +82,10 @@ export async function captureStyleSnapshots(
                 order = collectRuleSources(target, candidateProperties, sheet.href ?? undefined, Array.from(rules), declarations, order);
               }
 
-              const winner = pickWinningDeclaration(declarations);
+              const matchingDeclarations = declarations.filter((declaration) =>
+                declarationMatchesComputed(target, property, computedValue, declaration.declaredProperty, declaration.value)
+              );
+              const winner = pickWinningDeclaration(matchingDeclarations);
               if (winner) return [toSource(winner)];
             }
 
@@ -96,6 +101,7 @@ export async function captureStyleSnapshots(
               type: "inline" | "rule";
               href?: string;
               selectorText?: string;
+              declaredProperty: string;
               value: string;
               important: boolean;
               specificity: [number, number, number];
@@ -121,6 +127,7 @@ export async function captureStyleSnapshots(
                     type: "rule",
                     href,
                     selectorText: matchingSelector,
+                    declaredProperty: value.property,
                     value: value.value,
                     important: value.important,
                     specificity: selectorSpecificity(matchingSelector),
@@ -134,10 +141,10 @@ export async function captureStyleSnapshots(
             return order;
           }
 
-          function firstDeclaredValue(style: CSSStyleDeclaration, properties: string[]): { value: string; important: boolean } | undefined {
+          function firstDeclaredValue(style: CSSStyleDeclaration, properties: string[]): { property: string; value: string; important: boolean } | undefined {
             for (const property of properties) {
               const value = style.getPropertyValue(property);
-              if (value) return { value, important: style.getPropertyPriority(property) === "important" };
+              if (value) return { property, value, important: style.getPropertyPriority(property) === "important" };
             }
             return undefined;
           }
@@ -171,6 +178,7 @@ export async function captureStyleSnapshots(
               type: "inline" | "rule";
               href?: string;
               selectorText?: string;
+              declaredProperty: string;
               value: string;
               important: boolean;
               specificity: [number, number, number];
@@ -181,6 +189,7 @@ export async function captureStyleSnapshots(
                 type: "inline" | "rule";
                 href?: string;
                 selectorText?: string;
+                declaredProperty: string;
                 value: string;
                 important: boolean;
                 specificity: [number, number, number];
@@ -203,6 +212,7 @@ export async function captureStyleSnapshots(
             type: "inline" | "rule";
             href?: string;
             selectorText?: string;
+            declaredProperty?: string;
             value: string;
           }): { type: "inline" | "rule"; href?: string; selectorText?: string; value: string } {
             return {
@@ -214,7 +224,7 @@ export async function captureStyleSnapshots(
           }
 
           function bestMatchingSelector(element: Element, selectorText: string): string | undefined {
-            const selectors = selectorText.split(",").map((selector) => selector.trim()).filter(Boolean);
+            const selectors = splitSelectorList(selectorText);
             return selectors
               .filter((selector) => {
                 try {
@@ -225,6 +235,63 @@ export async function captureStyleSnapshots(
               })
               .sort((a, b) => compareSpecificity(selectorSpecificity(a), selectorSpecificity(b)))
               .at(-1);
+          }
+
+          function splitSelectorList(selectorText: string): string[] {
+            const selectors: string[] = [];
+            let current = "";
+            let depth = 0;
+            for (const char of selectorText) {
+              if (char === "(") depth += 1;
+              if (char === ")") depth = Math.max(0, depth - 1);
+              if (char === "," && depth === 0) {
+                if (current.trim()) selectors.push(current.trim());
+                current = "";
+                continue;
+              }
+              current += char;
+            }
+            if (current.trim()) selectors.push(current.trim());
+            return selectors;
+          }
+
+          function declarationMatchesComputed(
+            target: Element,
+            computedProperty: string,
+            computedValue: string,
+            declaredProperty: string,
+            declaredValue: string
+          ): boolean {
+            const resolved = resolveDeclaredValue(target, computedProperty, declaredProperty, declaredValue);
+            return normalizeBrowserValue(resolved, computedProperty) === normalizeBrowserValue(computedValue, computedProperty);
+          }
+
+          function resolveDeclaredValue(target: Element, computedProperty: string, declaredProperty: string, declaredValue: string): string {
+            const probe = document.createElement("span");
+            probe.style.all = "initial";
+            probe.style.position = "absolute";
+            probe.style.visibility = "hidden";
+            probe.style.pointerEvents = "none";
+            probe.style.setProperty(declaredProperty, declaredValue);
+            const parent = target instanceof HTMLElement ? target : document.body;
+            parent.appendChild(probe);
+            try {
+              return window.getComputedStyle(probe).getPropertyValue(computedProperty);
+            } finally {
+              probe.remove();
+            }
+          }
+
+          function normalizeBrowserValue(value: string, property: string): string {
+            const normalized = value.replace(/\s+/g, " ").trim();
+            if (property === "font-family") {
+              return normalized
+                .split(",")
+                .map((part) => part.trim())
+                .filter((part) => !/^["']?[A-Za-z0-9 _-]+ Fallback["']?$/i.test(part))
+                .join(", ");
+            }
+            return normalized;
           }
 
           function selectorSpecificity(selector: string): [number, number, number] {

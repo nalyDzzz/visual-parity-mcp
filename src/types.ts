@@ -118,6 +118,7 @@ export interface StyleDiffCluster {
   selectors: string[];
   examples: StyleDiff[];
   priority: "high" | "medium" | "low";
+  severity: "critical" | "major" | "minor";
   suggestedFix?: string;
   estimatedResolution?: {
     diffs: number;

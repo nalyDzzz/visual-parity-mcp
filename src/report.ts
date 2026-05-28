@@ -62,7 +62,7 @@ function renderPageReport(report: PageComparisonReport): string {
     </section>
     <section>
       <h2>Root-cause clusters</h2>
-      ${clusterList(report.styles?.analysis?.clusters.slice(0, 20) ?? [])}
+      ${clusterList(report.styles?.analysis?.clusters ?? [], 20)}
     </section>
     <section>
       <h2>Top remaining style/layout diffs</h2>
@@ -106,7 +106,7 @@ function renderInspectReport(report: InspectSelectorReport): string {
     </section>
     <section>
       <h2>Root-cause clusters</h2>
-      ${clusterList(report.styles.analysis?.clusters.slice(0, 20) ?? [])}
+      ${clusterList(report.styles.analysis?.clusters ?? [], 20)}
     </section>
     <section>
       <h2>Diffs</h2>
@@ -159,14 +159,21 @@ function diffList(diffs: StyleDiff[]): string {
   return `<ol class="diffs">${diffs.map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("\n")}</ol>`;
 }
 
-function clusterList(clusters: StyleDiffCluster[]): string {
+function clusterList(clusters: StyleDiffCluster[], limit: number): string {
   if (clusters.length === 0) return "<p>No root-cause clusters found.</p>";
-  return `<ol class="clusters">${clusters.map((cluster) => `<li>
+  const visible = prioritizedClusters(clusters, limit);
+  const hiddenCount = Math.max(0, clusters.length - visible.length);
+  return `<ol class="clusters">${visible.map((cluster) => `<li>
     <div class="cluster-title">${escapeHtml(formatCluster(cluster))}</div>
-    <div class="cluster-meta">${cluster.count.toLocaleString()} diffs across ${cluster.selectors.length.toLocaleString()} selectors${cluster.estimatedResolution?.diffPercent ? `, approx ${cluster.estimatedResolution.diffPercent.toFixed(3)}% pixel delta` : ""}</div>
+    <div class="cluster-meta">${escapeHtml(cluster.severity)} · ${cluster.count.toLocaleString()} diffs across ${cluster.selectors.length.toLocaleString()} selectors${cluster.estimatedResolution?.diffPercent ? `, approx ${cluster.estimatedResolution.diffPercent.toFixed(3)}% pixel delta` : ""}</div>
     ${cluster.suggestedFix ? `<div class="suggestion">${escapeHtml(cluster.suggestedFix)}</div>` : ""}
     <ul>${cluster.examples.slice(0, 3).map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("")}</ul>
-  </li>`).join("\n")}</ol>`;
+  </li>`).join("\n")}</ol>${hiddenCount > 0 ? `<p class="cluster-meta">${hiddenCount.toLocaleString()} minor one-off findings hidden from this view.</p>` : ""}`;
+}
+
+function prioritizedClusters(clusters: StyleDiffCluster[], limit: number): StyleDiffCluster[] {
+  const repeated = clusters.filter((cluster) => cluster.count >= 2);
+  return (repeated.length > 0 ? repeated : clusters).slice(0, limit);
 }
 
 function crossPageFindingList(findings: CrossPageFinding[], outputDir: string): string {
