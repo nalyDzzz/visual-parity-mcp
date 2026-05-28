@@ -112,7 +112,7 @@ Detect:
 - Computed style value differences.
 - Short text sample mismatches.
 
-Do not spam the agent. Save full diffs in JSON, but return top diffs in CLI/MCP output.
+Keep CLI and MCP responses compact. Save full diffs in JSON, but return only the most relevant diffs in command output and tool responses.
 
 ## MCP design
 
@@ -128,7 +128,7 @@ Base URL pair + list of route paths. Returns aggregate summary and artifact path
 
 ### `inspect_selector`
 
-Deep-dive one selector between two pages. Useful after a failed compare when the agent needs exact CSS/layout differences.
+Deep-dive one selector between two pages. Useful after a failed compare when exact CSS/layout differences are needed.
 
 ## Security / safety
 
@@ -147,4 +147,4 @@ Source CSS from legacy sites, CMSs, builders, and production apps is often:
 - dependent on runtime scripts and inline styles
 - not directly portable to a new component architecture
 
-Rendered visual comparison is the useful invariant. Pixel output, bounding boxes, and computed styles tell us what matters without worshipping somebody else's cursed CSS sewer.
+Rendered visual comparison is the useful invariant. Pixel output, bounding boxes, and computed styles identify the relevant differences without depending on source CSS from the original implementation.

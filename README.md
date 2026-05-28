@@ -1,48 +1,53 @@
 # Visual Parity MCP
 
-A local-first visual QA toolkit for comparing a **reference** web page against a **candidate** web page.
+Visual Parity MCP compares a reference web page against a candidate web page and writes screenshot, pixel-diff, and computed-style reports.
 
-Use it for website migrations, redesigns, framework rewrites, CMS rebuilds, landing page refreshes, or any cursed “make this page match that page” job where eyeballing screenshots by hand makes you want to walk into the sea.
+It is designed for website rebuilds, CMS migrations, framework rewrites, landing page QA, and agent-assisted visual parity work where you need concrete browser-rendered evidence instead of manual screenshot inspection.
 
-It includes:
+## Features
 
-- a CLI: `visual-parity`
-- an MCP stdio server: `visual-parity-mcp`
-- Playwright screenshot capture
-- pixel diffs
-- computed style and bounding-box diffs
-- JSON + HTML reports
-- optional presets, including `hubspot`
+- MCP stdio server: `visual-parity-mcp`
+- CLI: `visual-parity`
+- Playwright Chromium page capture
+- Pixel-level screenshot diffs with configurable thresholds
+- Computed style, text, and bounding-box diffs by selector
+- HTML and JSON reports
+- Noisy-element masking with custom selectors
+- Built-in `hubspot` preset for common HubSpot page noise
+- Configurable Playwright `waitUntil` behavior for local dev servers
 
-## What it compares
+## Requirements
 
-Visual Parity MCP compares:
+- Node.js 20 or newer
+- Playwright Chromium
 
-- **Reference page:** the page you want to match, e.g. production, a competitor page, an old CMS page, or a design-system reference URL
-- **Candidate page:** the page being tested, e.g. localhost, preview deploy, staging, or the rewritten implementation
+If Chromium is not already installed, run:
 
-It writes:
-
-- `live.png` reference screenshot
-- `local.png` candidate screenshot
-- `diff.png` pixel difference image
-- `report.json` full machine-readable report
-- `report.html` human-readable report
-- computed style/layout diffs for selectors like `header`, `.hero`, `h1`, `.cta`
-
-> Note: artifact and JSON field names still use `live` / `local` for backward compatibility. The user-facing language is now reference / candidate.
-
-## Why this exists
-
-Copying source CSS is often the wrong move. CMSs and legacy apps tend to produce CSS that is split across generated files, order-dependent, runtime-mutated, wrapper-heavy, and generally haunted as shit.
-
-Rendered output is the truth. This tool compares what the browser actually renders and gives humans or agents concrete evidence to fix.
+```bash
+npx playwright install chromium
+```
 
 ## Install
 
-### From npm
+Use directly with `npx`:
 
-MCP server via `npx`:
+```bash
+npx -y -p visual-parity-mcp visual-parity compare \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about
+```
+
+Or install globally:
+
+```bash
+npm install -g visual-parity-mcp
+visual-parity --help
+visual-parity-mcp
+```
+
+## MCP Setup
+
+Add the server to your MCP client configuration:
 
 ```json
 {
@@ -55,90 +60,135 @@ MCP server via `npx`:
 }
 ```
 
-CLI without installing globally:
-
-```bash
-npx -y -p visual-parity-mcp visual-parity compare \
-  --reference https://example.com/about \
-  --candidate http://localhost:3000/about
-```
-
-Global install if you want both binaries on PATH:
-
-```bash
-npm install -g visual-parity-mcp
-visual-parity --help
-visual-parity-mcp
-```
-
-### From source
+For a local source checkout, build first:
 
 ```bash
 npm install
 npm run build
-npm link
-visual-parity --help
 ```
 
-If Chromium is missing:
+Then configure the built server:
 
-```bash
-npx playwright install chromium
+```json
+{
+  "mcpServers": {
+    "visual-parity": {
+      "command": "node",
+      "args": ["/absolute/path/to/visual-parity-mcp/dist/mcp.js"]
+    }
+  }
+}
 ```
 
-## CLI usage
+Restart your MCP client after changing the config.
 
-### Compare one page
+## MCP Tools
+
+### `compare_pages`
+
+Compare one reference URL against one candidate URL.
+
+```json
+{
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
+  "outputDir": "reports/visual-parity",
+  "name": "about",
+  "viewport": {
+    "width": 1440,
+    "height": 1200,
+    "deviceScaleFactor": 1
+  },
+  "fullPage": false,
+  "waitUntil": "domcontentloaded",
+  "waitMs": 1000,
+  "timeoutMs": 30000,
+  "threshold": 0.1,
+  "maxDiffPercent": 1,
+  "selectors": ["header", "main", "h1", ".hero", ".cta"],
+  "hideSelectors": [".cookie-banner", ".chat-widget"],
+  "presets": ["hubspot"],
+  "compareStyles": true
+}
+```
+
+The response includes pass/fail status, pixel diff percentage, report paths, screenshot paths, style diff count, and top computed-style differences.
+
+### `compare_routes`
+
+Compare multiple paths under a reference and candidate base URL.
+
+```json
+{
+  "referenceBaseUrl": "https://example.com",
+  "candidateBaseUrl": "http://localhost:3000",
+  "paths": ["/", "/about", "/pricing"],
+  "waitUntil": "domcontentloaded",
+  "presets": ["hubspot"]
+}
+```
+
+### `inspect_selector`
+
+Inspect one selector across reference and candidate pages.
+
+```json
+{
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
+  "selector": ".hero",
+  "waitUntil": "domcontentloaded"
+}
+```
+
+Legacy field names are still accepted for compatibility:
+
+```json
+{
+  "liveUrl": "https://example.com/about",
+  "localUrl": "http://localhost:3000/about"
+}
+```
+
+## CLI Usage
+
+### Compare One Page
 
 ```bash
 visual-parity compare \
   --reference https://example.com/about \
   --candidate http://localhost:3000/about \
+  --wait-until domcontentloaded \
   --selector header \
   --selector main \
   --selector h1 \
-  --selector '.hero' \
-  --selector '.cta'
+  --selector ".hero" \
+  --selector ".cta"
 ```
 
-Legacy aliases still work:
-
-```bash
-visual-parity compare \
-  --live https://example.com/about \
-  --local http://localhost:3000/about
-```
-
-### Compare multiple routes
+### Compare Multiple Routes
 
 ```bash
 visual-parity routes \
   --reference-base https://example.com \
   --candidate-base http://localhost:3000 \
+  --wait-until domcontentloaded \
   --path / \
   --path /about \
   --path /pricing
 ```
 
-Legacy aliases still work:
-
-```bash
-visual-parity routes \
-  --live-base https://example.com \
-  --local-base http://localhost:3000 \
-  --path /about
-```
-
-### Inspect one selector
+### Inspect One Selector
 
 ```bash
 visual-parity inspect \
   --reference https://example.com/about \
   --candidate http://localhost:3000/about \
-  --selector '.hero'
+  --selector ".hero" \
+  --wait-until domcontentloaded
 ```
 
-## Common options
+## Common Options
 
 ```text
 --reference <url>           Reference/source URL
@@ -157,133 +207,155 @@ visual-parity inspect \
 --threshold <number>        pixelmatch threshold, default 0.1
 --max-diff-percent <num>    Failure threshold, default 1.0
 --selector <css>            Repeatable selector for style/layout extraction
---hide <css>                Repeatable noisy selector to hide before screenshot
+--hide <css>                Repeatable selector to hide before screenshot
 --preset <name>             Repeatable preset bundle; currently: hubspot
---no-styles                 Disable computed style extraction
+--no-styles                 Disable computed-style extraction
 --json                      Print compact JSON only
 ```
 
-For local dev servers that keep websocket/HMR connections open, such as `next dev` or Vite dev mode, use:
+## Navigation Readiness
+
+The default navigation readiness state is `networkidle`.
+
+For local development servers such as `next dev` or Vite dev mode, use:
 
 ```bash
 --wait-until domcontentloaded
 ```
 
-The default `networkidle` is still useful for quieter production/staging pages, but dev servers may never become network-idle.
+Persistent HMR websocket connections can keep dev pages from ever reaching `networkidle`, which causes navigation timeouts. `domcontentloaded` is usually the right option for local iteration. Production and preview URLs often work well with the default `networkidle`.
 
-## Presets
+Accepted values:
 
-Presets bundle useful selectors and noise masks for specific stacks. The tool is general by default; presets are optional.
+- `commit`
+- `domcontentloaded`
+- `load`
+- `networkidle`
 
-### HubSpot preset
+## Reports
 
-`--preset hubspot` adds selectors/noise masks for HubSpot-backed pages:
+Each comparison writes a run directory containing:
 
-- content/style selectors: `body`, `header`, `nav`, `main`, `footer`, `section`, headings, buttons, hero/CTA/card/module-ish classes
-- noise masks: cookie banners, HubSpot iframes/forms/chat widgets, CAPTCHA badge, aria-live regions
+```text
+live.png       Reference screenshot
+local.png      Candidate screenshot
+diff.png       Pixel difference image
+report.json    Full machine-readable report
+report.html    Human-readable report
+```
 
-Example:
+The JSON report includes:
+
+- reference and candidate URLs
+- viewport settings
+- screenshot paths
+- diff dimensions and mismatch count
+- `diffPercent`
+- pass/fail result based on `maxDiffPercent`
+- computed-style, layout, and text diffs for selected elements
+
+Artifact names still use `live` and `local` for backward compatibility.
+
+## HubSpot Preset
+
+Use the HubSpot preset when comparing HubSpot-backed pages:
 
 ```bash
 visual-parity compare \
   --reference https://old-site.com/pricing \
   --candidate http://localhost:3000/pricing \
   --preset hubspot \
-  --selector '.pricing-card' \
-  --hide '.promo-modal'
+  --wait-until domcontentloaded
 ```
 
-Don't hide real page content unless it is dynamic/noisy. The point is visual truth, not sweeping ugly evidence under the rug like a corporate incident report.
+The preset adds common content selectors and masks common noisy elements such as cookie banners, HubSpot forms, chat widgets, CAPTCHA badges, and aria-live regions.
 
-## MCP usage
+You can add more masks with `--hide` or `hideSelectors`.
 
-Recommended npm / `npx` config:
+## Suggested Workflow
 
-```json
-{
-  "mcpServers": {
-    "visual-parity": {
-      "command": "npx",
-      "args": ["-y", "visual-parity-mcp"]
-    }
-  }
-}
-```
-
-Source checkout config after building:
-
-```json
-{
-  "mcpServers": {
-    "visual-parity": {
-      "command": "node",
-      "args": ["/absolute/path/to/visual-parity-mcp/dist/mcp.js"]
-    }
-  }
-}
-```
-
-Exposed tools:
-
-- `compare_pages`
-- `compare_routes`
-- `inspect_selector`
-
-Example `compare_pages` input:
-
-```json
-{
-  "referenceUrl": "https://example.com/about",
-  "candidateUrl": "http://localhost:3000/about",
-  "outputDir": "reports/visual-parity",
-  "name": "about",
-  "viewport": { "width": 1440, "height": 1200, "deviceScaleFactor": 1 },
-  "fullPage": false,
-  "waitUntil": "domcontentloaded",
-  "waitMs": 1000,
-  "threshold": 0.1,
-  "maxDiffPercent": 1,
-  "presets": ["hubspot"],
-  "selectors": [".custom-section"],
-  "hideSelectors": [".custom-chat-widget"],
-  "compareStyles": true
-}
-```
-
-Legacy MCP fields still work:
-
-```json
-{
-  "liveUrl": "https://example.com/about",
-  "localUrl": "http://localhost:3000/about"
-}
-```
-
-## Recommended workflow
-
-1. Start or identify the candidate site/app.
-2. Run `visual-parity compare` for one route.
+1. Start the candidate app or identify a preview URL.
+2. Run one page comparison.
 3. Open `report.html` and inspect `diff.png`.
-4. Give Claude/Codex/the poor intern the JSON summary and report paths.
-5. Fix styles/components.
-6. Re-run compare.
-7. Repeat until diff is under threshold or remaining differences are acceptable content/dynamic changes.
+4. Use `report.json` or the MCP response to identify the largest style/layout differences.
+5. Fix the candidate page.
+6. Re-run the comparison.
+7. Repeat until the remaining differences are acceptable.
 
-## CI
+For Next.js local development, include `waitUntil: "domcontentloaded"` in MCP calls or `--wait-until domcontentloaded` in CLI calls.
 
-This repo includes GitHub Actions CI at `.github/workflows/ci.yml`:
+## Exit Codes
 
-- `npm ci`
-- install Playwright Chromium with dependencies
-- `npm run build`
-- `npm run smoke`
+```text
+0    Command completed and visual diff passed the configured threshold
+1    Command failed due to an error such as bad input, navigation failure, or missing browser
+2    Command completed but visual diff exceeded the configured threshold
+```
 
-The smoke fixture intentionally fails visual parity; the smoke runner treats exit code `2` as success because `2` means “comparison completed and exceeded threshold,” not “the tool crashed.”
+## Development
 
-## Project docs
+```bash
+npm install
+npm run build
+npm run smoke
+```
 
-- `docs/HANDOFF.md` — pickup notes for future agents
-- `docs/ARCHITECTURE.md` — technical architecture
-- `docs/IMPLEMENTATION_PLAN.md` — task-by-task implementation plan
-- `docs/STATUS.md` — current implementation status and verified commands
-- `CODEX_PROMPT.md` — standalone coding-agent handoff prompt
+Useful local commands:
+
+```bash
+npm run compare -- --help
+npm run routes -- --help
+npm run inspect -- --help
+npm run dev:mcp
+```
+
+The smoke fixture intentionally produces a visual diff. The smoke script treats CLI exit code `2` as success because it confirms the comparison completed and reported the expected threshold failure.
+
+## Publishing
+
+Before publishing:
+
+```bash
+npm ci
+npm run build
+npm run smoke
+npm pack --dry-run
+```
+
+Publish a patch release:
+
+```bash
+npm version patch
+npm publish --access public
+```
+
+After publishing, verify the package through `npx`:
+
+```bash
+npx -y -p visual-parity-mcp visual-parity --help
+npx -y -p visual-parity-mcp visual-parity compare --help
+```
+
+Then restart MCP clients that use:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "visual-parity-mcp"]
+}
+```
+
+If an MCP client appears to keep using an old package version, clear its npx/npm cache or temporarily pin the new version:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "visual-parity-mcp@0.1.1"]
+}
+```
+
+Replace `0.1.1` with the version you published.
+
+## License
+
+MIT
