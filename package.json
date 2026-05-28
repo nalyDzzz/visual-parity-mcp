@@ -1,6 +1,6 @@
 {
   "name": "visual-parity-mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "MCP server and CLI for visual parity QA between reference and candidate web pages.",
   "type": "module",
   "bin": {
