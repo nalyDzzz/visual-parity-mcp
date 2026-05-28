@@ -21,6 +21,14 @@ export interface PageHealth {
   warnings: string[];
 }
 
+export interface PageMaskRect {
+  selector?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ComparePagesOptions {
   liveUrl: string;
   localUrl: string;
@@ -32,6 +40,11 @@ export interface ComparePagesOptions {
   waitUntil?: WaitUntil;
   waitMs?: number;
   timeoutMs?: number;
+  loadRetries?: number;
+  retryDelayMs?: number;
+  userAgent?: string;
+  persistentContextDir?: string;
+  softPageHealth?: boolean;
   threshold?: number;
   maxDiffPercent?: number;
   selectors?: string[];
@@ -42,6 +55,7 @@ export interface ComparePagesOptions {
   acceptedDeviations?: AcceptedDeviation[];
   maxElementsPerSelector?: number;
   diffLimit?: number;
+  scrollPositions?: number[];
 }
 
 export interface CompareRoutesOptions extends Omit<ComparePagesOptions, "liveUrl" | "localUrl" | "name"> {
@@ -61,6 +75,11 @@ export interface InspectSelectorOptions {
   waitUntil?: WaitUntil;
   waitMs?: number;
   timeoutMs?: number;
+  loadRetries?: number;
+  retryDelayMs?: number;
+  userAgent?: string;
+  persistentContextDir?: string;
+  softPageHealth?: boolean;
   threshold?: number;
   styleProperties?: string[];
   hideSelectors?: string[];
@@ -135,6 +154,7 @@ export interface StyleDiffCluster {
   priority: "high" | "medium" | "low";
   severity: "critical" | "major" | "minor";
   suggestedFix?: string;
+  fixability?: "candidate" | "reference" | "mixed" | "unknown";
   estimatedResolution?: {
     diffs: number;
     diffPercent?: number;
@@ -185,10 +205,14 @@ export interface PageComparisonReport {
     mismatchedPixels: number;
     totalPixels: number;
     diffPercent: number;
+    effectiveDiffPercent: number;
+    effectiveMismatchedPixels: number;
+    maskedPixels: number;
     threshold: number;
     maxDiffPercent: number;
     passed: boolean;
   };
+  scrollStates?: ScrollStateComparison[];
   health?: {
     live: PageHealth;
     local: PageHealth;
@@ -204,6 +228,18 @@ export interface PageComparisonReport {
   };
   reportJson: string;
   reportHtml: string;
+}
+
+export interface ScrollStateComparison {
+  position: number;
+  liveScrollY: number;
+  localScrollY: number;
+  screenshots: {
+    live: string;
+    local: string;
+    diff: string;
+  };
+  visual: PageComparisonReport["visual"];
 }
 
 export interface RoutesComparisonReport {

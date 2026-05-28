@@ -47,8 +47,10 @@ function renderPageReport(report: PageComparisonReport): string {
       </div>
       <dl>
         <div><dt>Diff</dt><dd>${report.visual.diffPercent.toFixed(3)}%</dd></div>
+        <div><dt>Effective</dt><dd>${report.visual.effectiveDiffPercent.toFixed(3)}%</dd></div>
         <div><dt>Max</dt><dd>${report.visual.maxDiffPercent.toFixed(3)}%</dd></div>
         <div><dt>Pixels</dt><dd>${report.visual.mismatchedPixels.toLocaleString()} / ${report.visual.totalPixels.toLocaleString()}</dd></div>
+        ${report.visual.maskedPixels > 0 ? `<div><dt>Masked</dt><dd>${report.visual.maskedPixels.toLocaleString()} px</dd></div>` : ""}
         <div><dt>Viewport</dt><dd>${report.viewport.width}×${report.viewport.height}@${report.viewport.deviceScaleFactor ?? 1}</dd></div>
         ${report.health ? `<div><dt>Hidden</dt><dd>${(report.health.live.hiddenElementCount + report.health.local.hiddenElementCount).toLocaleString()}</dd></div>` : ""}
       </dl>
@@ -61,6 +63,7 @@ function renderPageReport(report: PageComparisonReport): string {
         ${imageCard("Diff", diffImg)}
       </div>
     </section>
+    ${scrollStateSection(report)}
     <section>
       <h2>Root-cause clusters</h2>
       ${clusterList(report.styles?.analysis?.clusters ?? [], 20)}
@@ -155,6 +158,22 @@ function imageCard(label: string, src: string): string {
   return `<figure><figcaption>${escapeHtml(label)}</figcaption><img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy" /></figure>`;
 }
 
+function scrollStateSection(report: PageComparisonReport): string {
+  if (!report.scrollStates || report.scrollStates.length === 0) return "";
+  return `<section>
+    <h2>Scroll states</h2>
+    ${report.scrollStates.map((state) => `<div class="scroll-state">
+      <h3>${escapeHtml(state.position)} (${state.visual.effectiveDiffPercent.toFixed(3)}%)</h3>
+      <p class="cluster-meta">reference y=${state.liveScrollY.toLocaleString()}, candidate y=${state.localScrollY.toLocaleString()}</p>
+      <div class="grid three">
+        ${imageCard("Reference", relativeForHtml(state.screenshots.live, report.runDir))}
+        ${imageCard("Candidate", relativeForHtml(state.screenshots.local, report.runDir))}
+        ${imageCard("Diff", relativeForHtml(state.screenshots.diff, report.runDir))}
+      </div>
+    </div>`).join("\n")}
+  </section>`;
+}
+
 function diffList(diffs: StyleDiff[]): string {
   if (diffs.length === 0) return "<p>No style/layout diffs captured.</p>";
   return `<ol class="diffs">${diffs.map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("\n")}</ol>`;
@@ -166,7 +185,7 @@ function clusterList(clusters: StyleDiffCluster[], limit: number): string {
   const hiddenCount = Math.max(0, clusters.length - visible.length);
   return `<ol class="clusters">${visible.map((cluster) => `<li>
     <div class="cluster-title">${escapeHtml(formatCluster(cluster))}</div>
-    <div class="cluster-meta">${escapeHtml(cluster.severity)} · ${cluster.count.toLocaleString()} diffs across ${cluster.selectors.length.toLocaleString()} selectors${cluster.estimatedResolution?.diffPercent ? `, approx ${cluster.estimatedResolution.diffPercent.toFixed(3)}% pixel delta` : ""}</div>
+    <div class="cluster-meta">${escapeHtml(cluster.severity)} · ${escapeHtml(cluster.fixability ?? "unknown")} · ${cluster.count.toLocaleString()} diffs across ${cluster.selectors.length.toLocaleString()} selectors${cluster.estimatedResolution?.diffPercent ? `, approx ${cluster.estimatedResolution.diffPercent.toFixed(3)}% pixel delta` : ""}</div>
     ${cluster.suggestedFix ? `<div class="suggestion">${escapeHtml(cluster.suggestedFix)}</div>` : ""}
     <ul>${cluster.examples.slice(0, 3).map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("")}</ul>
   </li>`).join("\n")}</ol>${hiddenCount > 0 ? `<p class="cluster-meta">${hiddenCount.toLocaleString()} minor one-off findings hidden from this view.</p>` : ""}`;

@@ -30,11 +30,17 @@ program
   .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
   .option("--threshold <number>", "pixelmatch threshold", "0.1")
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
   .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
+  .option("--scroll-position <value>", "Repeatable viewport scroll state to compare after the base screenshot; 0..1 = page progress, >1 = pixels", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -68,11 +74,17 @@ program
   .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
   .option("--threshold <number>", "pixelmatch threshold", "0.1")
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
   .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
+  .option("--scroll-position <value>", "Repeatable viewport scroll state to compare after the base screenshot; 0..1 = page progress, >1 = pixels", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -117,6 +129,11 @@ program
   .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
   .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
   .option("--json", "Print compact JSON only", false)
@@ -137,6 +154,11 @@ program
         waitUntil: parseWaitUntil(opts.waitUntil),
         waitMs: toNumber(opts.waitMs, 1000),
         timeoutMs: toNumber(opts.timeoutMs, 30000),
+        loadRetries: toNumber(opts.loadRetries, 1),
+        retryDelayMs: toNumber(opts.retryDelayMs, 1000),
+        userAgent: stringOption(opts.userAgent),
+        persistentContextDir: stringOption(opts.persistentContextDir),
+        softPageHealth: Boolean(opts.softPageHealth),
         hideSelectors: uniqueNonEmpty(opts.hide),
         presets: uniqueNonEmpty(opts.preset)
       };
@@ -182,11 +204,17 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
     waitUntil: parseWaitUntil(opts.waitUntil),
     waitMs: toNumber(opts.waitMs, 1000),
     timeoutMs: toNumber(opts.timeoutMs, 30000),
+    loadRetries: toNumber(opts.loadRetries, 1),
+    retryDelayMs: toNumber(opts.retryDelayMs, 1000),
+    userAgent: stringOption(opts.userAgent),
+    persistentContextDir: stringOption(opts.persistentContextDir),
+    softPageHealth: Boolean(opts.softPageHealth),
     threshold: toNumber(opts.threshold, 0.1),
     maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
     selectors: uniqueNonEmpty(opts.selector),
     hideSelectors: uniqueNonEmpty(opts.hide),
     presets: uniqueNonEmpty(opts.preset),
+    scrollPositions: parseNumberList(opts.scrollPosition),
     compareStyles: opts.styles !== false
   };
 }
@@ -217,6 +245,11 @@ function parseWaitUntil(value: unknown): WaitUntil {
   throw new Error("Invalid --wait-until value. Expected one of: commit, domcontentloaded, load, networkidle.");
 }
 
+function parseNumberList(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  return values.map((value) => toNumber(value, Number.NaN)).filter((value) => Number.isFinite(value) && value >= 0);
+}
+
 async function runCommand(fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
@@ -231,6 +264,8 @@ function compactPageSummary(report: PageComparisonReport) {
   return {
     passed: report.visual.passed,
     diffPercent: report.visual.diffPercent,
+    effectiveDiffPercent: report.visual.effectiveDiffPercent,
+    maskedPixels: report.visual.maskedPixels,
     maxDiffPercent: report.visual.maxDiffPercent,
     screenshots: report.screenshots,
     reportJson: report.reportJson,
@@ -243,7 +278,13 @@ function compactPageSummary(report: PageComparisonReport) {
       : undefined,
     topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? [],
     topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], 10).map(formatCluster),
-    remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], 10)
+    remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], 10),
+    scrollStates: report.scrollStates?.map((state) => ({
+      position: state.position,
+      effectiveDiffPercent: state.visual.effectiveDiffPercent,
+      passed: state.visual.passed,
+      screenshots: state.screenshots
+    })) ?? []
   };
 }
 
@@ -260,6 +301,13 @@ function compactRoutesSummary(report: RoutesComparisonReport) {
       passed: result.visual.passed,
       localUrl: result.localUrl,
       diffPercent: result.visual.diffPercent,
+      effectiveDiffPercent: result.visual.effectiveDiffPercent,
+      scrollStates: result.scrollStates?.map((state) => ({
+        position: state.position,
+        effectiveDiffPercent: state.visual.effectiveDiffPercent,
+        passed: state.visual.passed,
+        diff: state.screenshots.diff
+      })) ?? [],
       reportHtml: result.reportHtml
     }))
   };
@@ -270,17 +318,26 @@ function printPageReport(report: PageComparisonReport): void {
   console.log(`Reference: ${report.liveUrl}`);
   console.log(`Candidate: ${report.localUrl}`);
   console.log(`Diff:  ${report.visual.diffPercent.toFixed(3)}% (max ${report.visual.maxDiffPercent.toFixed(3)}%)`);
+  if (report.visual.effectiveDiffPercent !== report.visual.diffPercent || report.visual.maskedPixels > 0) {
+    console.log(`Effective diff: ${report.visual.effectiveDiffPercent.toFixed(3)}% (${report.visual.maskedPixels.toLocaleString()} masked px)`);
+  }
   console.log("Artifacts:");
   console.log(`  report: ${report.reportHtml}`);
   console.log(`  json:   ${report.reportJson}`);
   console.log(`  diff:   ${report.screenshots.diff}`);
+  if (report.scrollStates && report.scrollStates.length > 0) {
+    console.log("Scroll states:");
+    for (const state of report.scrollStates) {
+      console.log(`  ${state.visual.passed ? "PASS" : "FAIL"} ${state.position}: ${state.visual.effectiveDiffPercent.toFixed(3)}% (${state.screenshots.diff})`);
+    }
+  }
   const diffs = report.styles?.diffs.slice(0, 10) ?? [];
   const allClusters = report.styles?.analysis?.clusters ?? [];
   const clusters = prioritizedRootCauses(allClusters, 10);
   if (clusters.length > 0) {
     console.log("Top root causes:");
     for (const cluster of clusters) {
-      console.log(`  ${formatCluster(cluster)} (${cluster.severity}, ${cluster.count} diffs)`);
+      console.log(`  ${formatCluster(cluster)} (${cluster.severity}, ${cluster.fixability ?? "unknown"}, ${cluster.count} diffs)`);
       if (cluster.suggestedFix) console.log(`    fix: ${cluster.suggestedFix}`);
     }
     const hiddenCount = remainingRootCauseCount(allClusters, 10);

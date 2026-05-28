@@ -41,6 +41,11 @@ const comparePagesSchema = {
   waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
+  loadRetries: z.number().int().nonnegative().default(1).describe("Retry count for blocked or transiently empty page loads"),
+  retryDelayMs: z.number().int().nonnegative().default(1000),
+  userAgent: z.string().optional().describe("Override browser user agent"),
+  persistentContextDir: z.string().optional().describe("Reuse cookies/storage from a persistent Playwright profile directory"),
+  softPageHealth: z.boolean().default(false).describe("Return health warnings instead of failing on broken-page checks"),
   threshold: z.number().min(0).max(1).default(0.1),
   maxDiffPercent: z.number().min(0).default(1),
   selectors: z.array(z.string()).optional(),
@@ -50,7 +55,8 @@ const comparePagesSchema = {
   acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
-  compareStyles: z.boolean().default(true)
+  compareStyles: z.boolean().default(true),
+  scrollPositions: z.array(z.number().nonnegative()).optional().describe("Optional viewport scroll positions to compare after the base screenshot. Values 0..1 are page progress; values >1 are pixels.")
 };
 
 const compareRoutesSchema = {
@@ -66,6 +72,11 @@ const compareRoutesSchema = {
   waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
+  loadRetries: z.number().int().nonnegative().default(1),
+  retryDelayMs: z.number().int().nonnegative().default(1000),
+  userAgent: z.string().optional(),
+  persistentContextDir: z.string().optional(),
+  softPageHealth: z.boolean().default(false),
   threshold: z.number().min(0).max(1).default(0.1),
   maxDiffPercent: z.number().min(0).default(1),
   selectors: z.array(z.string()).optional(),
@@ -75,7 +86,8 @@ const compareRoutesSchema = {
   acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
-  compareStyles: z.boolean().default(true)
+  compareStyles: z.boolean().default(true),
+  scrollPositions: z.array(z.number().nonnegative()).optional().describe("Optional viewport scroll positions to compare after the base screenshot. Values 0..1 are page progress; values >1 are pixels.")
 };
 
 const inspectSelectorSchema = {
@@ -91,6 +103,11 @@ const inspectSelectorSchema = {
   waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
+  loadRetries: z.number().int().nonnegative().default(1),
+  retryDelayMs: z.number().int().nonnegative().default(1000),
+  userAgent: z.string().optional(),
+  persistentContextDir: z.string().optional(),
+  softPageHealth: z.boolean().default(false),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
   presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot', 'nextjs-fonts']"),
@@ -207,10 +224,21 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
   return {
     passed: report.visual.passed,
     diffPercent: Number(report.visual.diffPercent.toFixed(4)),
+    effectiveDiffPercent: Number(report.visual.effectiveDiffPercent.toFixed(4)),
+    maskedPixels: report.visual.maskedPixels,
     maxDiffPercent: report.visual.maxDiffPercent,
     liveUrl: report.liveUrl,
     localUrl: report.localUrl,
     screenshots: report.screenshots,
+    scrollStates: report.scrollStates?.map((state) => ({
+      position: state.position,
+      liveScrollY: state.liveScrollY,
+      localScrollY: state.localScrollY,
+      diffPercent: Number(state.visual.diffPercent.toFixed(4)),
+      effectiveDiffPercent: Number(state.visual.effectiveDiffPercent.toFixed(4)),
+      passed: state.visual.passed,
+      screenshots: state.screenshots
+    })) ?? [],
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
     health: report.health
@@ -225,6 +253,7 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
       finding: formatCluster(cluster),
       count: cluster.count,
       severity: cluster.severity,
+      fixability: cluster.fixability,
       selectors: cluster.selectors,
       estimatedResolution: cluster.estimatedResolution,
       suggestedFix: cluster.suggestedFix,
@@ -256,10 +285,17 @@ function compactRoutesSummary(report: RoutesComparisonReport, limit: number) {
     results: report.results.map((result) => ({
       passed: result.visual.passed,
       diffPercent: Number(result.visual.diffPercent.toFixed(4)),
+      effectiveDiffPercent: Number(result.visual.effectiveDiffPercent.toFixed(4)),
       liveUrl: result.liveUrl,
       localUrl: result.localUrl,
       reportHtml: result.reportHtml,
       diffImage: result.screenshots.diff,
+      scrollStates: result.scrollStates?.map((state) => ({
+        position: state.position,
+        effectiveDiffPercent: Number(state.visual.effectiveDiffPercent.toFixed(4)),
+        passed: state.visual.passed,
+        diffImage: state.screenshots.diff
+      })) ?? [],
       topDiffs: result.styles?.diffs.slice(0, Math.min(limit, 10)).map(formatDiff) ?? []
     }))
   };

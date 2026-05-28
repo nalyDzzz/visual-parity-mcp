@@ -4,13 +4,13 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import sharp from "sharp";
 import { analyzeStyleDiffs } from "./analysis.js";
-import { createContext, launchChromium, normalizeViewport, preparePage, screenshotFirstMatch, screenshotPage } from "./browser.js";
+import { collectHiddenRects, createBrowserSession, normalizeViewport, preparePage, screenshotFirstMatch, screenshotPage, scrollToPosition } from "./browser.js";
 import { loadVisualParityConfig, mergeAcceptedDeviations } from "./config.js";
 import { DEFAULT_SELECTORS, DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
 import { applyPresets } from "./presets.js";
 import { writeInspectReport, writePageReport } from "./report.js";
 import { captureStyleSnapshots, diffStyleSnapshots, enrichStyleDiffSources } from "./styles.js";
-import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport, StyleAnalysis, StyleDiff } from "./types.js";
+import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport, PageMaskRect, ScrollStateComparison, StyleAnalysis, StyleDiff } from "./types.js";
 import { DEFAULT_OUTPUT_DIR, ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
 
 export async function comparePages(rawOptions: ComparePagesOptions): Promise<PageComparisonReport> {
@@ -28,19 +28,32 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
   const localScreenshot = path.join(runDir, "local.png");
   const diffScreenshot = path.join(runDir, "diff.png");
 
-  const browser = await launchChromium();
+  const session = await createBrowserSession(options);
   try {
-    const context = await createContext(browser, viewport);
+    const context = session.context;
     const livePage = await context.newPage();
     const localPage = await context.newPage();
 
     const liveHealth = await preparePage(livePage, options.liveUrl, options);
+    const liveMasks = await collectHiddenRects(livePage);
     await screenshotPage(livePage, liveScreenshot, { fullPage: options.fullPage });
 
     const localHealth = await preparePage(localPage, options.localUrl, options);
+    const localMasks = await collectHiddenRects(localPage);
     await screenshotPage(localPage, localScreenshot, { fullPage: options.fullPage });
 
-    const visual = await diffScreenshots(liveScreenshot, localScreenshot, diffScreenshot, threshold, maxDiffPercent);
+    const visual = await diffScreenshots(liveScreenshot, localScreenshot, diffScreenshot, threshold, maxDiffPercent, [...liveMasks, ...localMasks]);
+    const scrollStates = await captureScrollStates({
+      livePage,
+      localPage,
+      runDir,
+      positions: options.scrollPositions ?? [],
+      threshold,
+      maxDiffPercent
+    });
+    if (scrollStates.length > 0) {
+      visual.passed = visual.passed && scrollStates.every((state) => state.visual.passed);
+    }
 
     const report: PageComparisonReport = {
       liveUrl: options.liveUrl,
@@ -54,6 +67,7 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
         diff: diffScreenshot
       },
       visual,
+      scrollStates: scrollStates.length > 0 ? scrollStates : undefined,
       health: {
         live: liveHealth,
         local: localHealth
@@ -69,10 +83,11 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
       const liveStyles = await captureStyleSnapshots(livePage, selectors, properties, maxElements);
       const localStyles = await captureStyleSnapshots(localPage, selectors, properties, maxElements);
       const rawDiffs = diffStyleSnapshots(liveStyles, localStyles);
-      const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.diffPercent);
+      let { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.effectiveDiffPercent);
       const sourceDiffs = sourceDiffsForReport(diffs, analysis, options.diffLimit ?? 25);
       await enrichStyleDiffSources(livePage, sourceDiffs, "live", sourceDiffs.length);
       await enrichStyleDiffSources(localPage, sourceDiffs, "local", sourceDiffs.length);
+      ({ diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.effectiveDiffPercent));
       report.styles = {
         comparedSelectors: selectors.length,
         rawDiffCount: rawDiffs.length,
@@ -84,11 +99,49 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
       };
     }
 
-    await context.close();
     return writePageReport(report);
   } finally {
-    await browser.close();
+    await session.close();
   }
+}
+
+async function captureScrollStates(options: {
+  livePage: import("playwright").Page;
+  localPage: import("playwright").Page;
+  runDir: string;
+  positions: number[];
+  threshold: number;
+  maxDiffPercent: number;
+}): Promise<ScrollStateComparison[]> {
+  const states: ScrollStateComparison[] = [];
+  const positions = Array.from(new Set(options.positions)).filter((position) => Number.isFinite(position) && position >= 0);
+  for (const position of positions) {
+    const slug = String(position).replace(/[^0-9.]+/g, "-").replace(/\./g, "p");
+    const liveScrollY = await scrollToPosition(options.livePage, position);
+    const localScrollY = await scrollToPosition(options.localPage, position);
+    const livePath = path.join(options.runDir, `scroll-${slug}-live.png`);
+    const localPath = path.join(options.runDir, `scroll-${slug}-local.png`);
+    const diffPath = path.join(options.runDir, `scroll-${slug}-diff.png`);
+    const liveMasks = await collectHiddenRects(options.livePage, "viewport");
+    const localMasks = await collectHiddenRects(options.localPage, "viewport");
+    await screenshotPage(options.livePage, livePath, { fullPage: false });
+    await screenshotPage(options.localPage, localPath, { fullPage: false });
+    const visual = await diffScreenshots(livePath, localPath, diffPath, options.threshold, options.maxDiffPercent, [...liveMasks, ...localMasks]);
+    states.push({
+      position,
+      liveScrollY,
+      localScrollY,
+      screenshots: {
+        live: livePath,
+        local: localPath,
+        diff: diffPath
+      },
+      visual
+    });
+  }
+  await scrollToPosition(options.livePage, 0);
+  await scrollToPosition(options.localPage, 0);
+  return states;
 }
 
 export async function inspectSelector(rawOptions: InspectSelectorOptions): Promise<InspectSelectorReport> {
@@ -100,9 +153,9 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
   const runDir = makeRunDir(outputDir, options.name, `inspect-${slugify(options.selector)}-${Date.now()}`);
   await ensureDir(runDir);
 
-  const browser = await launchChromium();
+  const session = await createBrowserSession(options);
   try {
-    const context = await createContext(browser, viewport);
+    const context = session.context;
     const livePage = await context.newPage();
     const localPage = await context.newPage();
 
@@ -114,10 +167,11 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
     const live = await captureStyleSnapshots(livePage, [options.selector], properties, maxElements);
     const local = await captureStyleSnapshots(localPage, [options.selector], properties, maxElements);
     const rawDiffs = diffStyleSnapshots(live, local);
-    const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations);
+    let { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations);
     const sourceDiffs = sourceDiffsForReport(diffs, analysis, options.diffLimit ?? 25);
     await enrichStyleDiffSources(livePage, sourceDiffs, "live", sourceDiffs.length);
     await enrichStyleDiffSources(localPage, sourceDiffs, "local", sourceDiffs.length);
+    ({ diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations));
 
     let liveCrop: string | undefined;
     let localCrop: string | undefined;
@@ -152,10 +206,9 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
       reportHtml: path.join(runDir, "inspect.html")
     };
 
-    await context.close();
     return writeInspectReport(report);
   } finally {
-    await browser.close();
+    await session.close();
   }
 }
 
@@ -173,7 +226,8 @@ export async function diffScreenshots(
   localPath: string,
   diffPath: string,
   threshold: number,
-  maxDiffPercent: number
+  maxDiffPercent: number,
+  maskRects: PageMaskRect[] = []
 ): Promise<PageComparisonReport["visual"]> {
   const liveMeta = await sharp(livePath).metadata();
   const localMeta = await sharp(localPath).metadata();
@@ -192,6 +246,10 @@ export async function diffScreenshots(
 
   const totalPixels = width * height;
   const diffPercent = totalPixels === 0 ? 0 : (mismatchedPixels / totalPixels) * 100;
+  const mask = buildPixelMask(width, height, maskRects);
+  const maskedPixels = mask.maskedPixels;
+  const effectiveMismatchedPixels = diffMaskedPixels(liveRaw, localRaw, width, height, threshold, mask.masked);
+  const effectiveDiffPercent = totalPixels === 0 ? 0 : (effectiveMismatchedPixels / totalPixels) * 100;
 
   return {
     width,
@@ -199,10 +257,57 @@ export async function diffScreenshots(
     mismatchedPixels,
     totalPixels,
     diffPercent,
+    effectiveDiffPercent,
+    effectiveMismatchedPixels,
+    maskedPixels,
     threshold,
     maxDiffPercent,
-    passed: diffPercent <= maxDiffPercent
+    passed: effectiveDiffPercent <= maxDiffPercent
   };
+}
+
+function buildPixelMask(width: number, height: number, rects: PageMaskRect[]): { masked: Uint8Array; maskedPixels: number } {
+  const masked = new Uint8Array(width * height);
+  let maskedPixels = 0;
+  for (const rect of rects) {
+    const left = Math.max(0, Math.floor(rect.x));
+    const top = Math.max(0, Math.floor(rect.y));
+    const right = Math.min(width, Math.ceil(rect.x + rect.width));
+    const bottom = Math.min(height, Math.ceil(rect.y + rect.height));
+    for (let y = top; y < bottom; y += 1) {
+      for (let x = left; x < right; x += 1) {
+        const index = y * width + x;
+        if (masked[index] === 0) {
+          masked[index] = 1;
+          maskedPixels += 1;
+        }
+      }
+    }
+  }
+  return { masked, maskedPixels };
+}
+
+function diffMaskedPixels(liveRaw: Buffer, localRaw: Buffer, width: number, height: number, threshold: number, masked: Uint8Array): number {
+  if (!masked.includes(1)) {
+    const scratch = new PNG({ width, height });
+    return pixelmatch(liveRaw, localRaw, scratch.data, width, height, { threshold });
+  }
+  const effectiveLive = Buffer.from(liveRaw);
+  const effectiveLocal = Buffer.from(localRaw);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    if (!masked[pixel]) continue;
+    const offset = pixel * 4;
+    effectiveLive[offset] = 255;
+    effectiveLive[offset + 1] = 255;
+    effectiveLive[offset + 2] = 255;
+    effectiveLive[offset + 3] = 255;
+    effectiveLocal[offset] = 255;
+    effectiveLocal[offset + 1] = 255;
+    effectiveLocal[offset + 2] = 255;
+    effectiveLocal[offset + 3] = 255;
+  }
+  const scratch = new PNG({ width, height });
+  return pixelmatch(effectiveLive, effectiveLocal, scratch.data, width, height, { threshold });
 }
 
 async function normalizeImageToRaw(inputPath: string, width: number, height: number): Promise<Buffer> {

@@ -90,6 +90,10 @@ Raw screenshots can differ in dimensions, especially full-page screenshots where
 
 This prevents false crashes and turns height differences into visible diff regions.
 
+Masked elements are tracked as rectangles after the page preparation pass. `diffPercent` remains the raw screenshot mismatch rate, while `effectiveDiffPercent` removes mismatches inside those masked regions and keeps the original page pixel count as its denominator. That keeps the score comparable to `maxDiffPercent` while preventing cookie banners, chat widgets, development toolbars, and other accepted selector noise from creating an unreachable pass threshold.
+
+Single screenshots cannot prove scroll-driven interaction parity. `compare_pages` can optionally capture targeted viewport scroll states with `scrollPositions`; use that for sticky/pinned modules, scroll-triggered swaps, and reveal choreography. For deeper diagnosis, use `inspect_selector` on the affected module after reproducing the state.
+
 ## Computed style extraction
 
 For each selector:
@@ -113,6 +117,8 @@ Detect:
 - Short text sample mismatches.
 
 Keep CLI and MCP responses compact. Save full diffs in JSON, but return only the most relevant diffs in command output and tool responses.
+
+When stylesheet provenance is available, candidate-side diffs should rank ahead of reference-only diffs. This keeps third-party live-only banners and widgets from burying actionable candidate CSS regressions.
 
 ## MCP design
 

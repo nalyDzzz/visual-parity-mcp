@@ -13,6 +13,8 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Computed style, text, and bounding-box diffs by selector
 - Basic stylesheet provenance for matched computed-style rules
 - Root-cause clustering for repeated style/layout diffs
+- Candidate-fixable root-cause ranking when stylesheet provenance is available
+- Raw and effective visual diff percentages; effective diff excludes masked/noisy selector regions
 - Cross-page aggregation for route comparisons
 - Broken-page detection for HTTP errors, empty bodies, and missing landmarks
 - Per-project accepted deviations through `.visual-parity.json`
@@ -22,6 +24,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Built-in `nextjs-fonts` preset for next/font fallback font-family noise
 - Built-in `dev-toolbars` preset for local feedback/debug toolbar overlays
 - Configurable Playwright `waitUntil` behavior for local dev servers
+- Retry/backoff, realistic user agent, and optional persistent browser profile for pages that block fresh headless sessions
 
 ## Requirements
 
@@ -110,11 +113,15 @@ Compare one reference URL against one candidate URL.
   "waitUntil": "domcontentloaded",
   "waitMs": 1000,
   "timeoutMs": 30000,
+  "loadRetries": 1,
+  "retryDelayMs": 1000,
+  "persistentContextDir": ".visual-parity/browser-profile",
   "threshold": 0.1,
   "maxDiffPercent": 1,
   "selectors": ["header", "main", "h1", ".hero", ".cta"],
   "hideSelectors": [".cookie-banner", ".chat-widget"],
   "presets": ["hubspot", "nextjs-fonts"],
+  "scrollPositions": [0.25, 0.5, 0.75],
   "acceptedDeviations": [
     { "selector": "header", "property": "position", "reason": "Intentional sticky chrome" }
   ],
@@ -122,7 +129,7 @@ Compare one reference URL against one candidate URL.
 }
 ```
 
-The response includes pass/fail status, pixel diff percentage, report paths, screenshot paths, style diff counts, top root-cause clusters, suggested fixes when available, and remaining raw examples.
+The response includes pass/fail status, raw and effective pixel diff percentages, report paths, screenshot paths, style diff counts, top root-cause clusters, fixability ranking, suggested fixes when available, and remaining raw examples.
 
 ### `compare_routes`
 
@@ -216,12 +223,18 @@ visual-parity inspect \
 --wait-until <state>        Navigation readiness state, default networkidle
 --wait-ms <ms>              Extra wait after page load, default 1000
 --timeout-ms <ms>           Navigation timeout, default 30000
+--load-retries <count>      Retry count for blocked or transiently empty page loads, default 1
+--retry-delay-ms <ms>       Delay between page load retries, default 1000
+--user-agent <value>        Override browser user agent
+--persistent-context-dir <dir> Reuse cookies/storage from a persistent Playwright profile directory
+--soft-page-health          Warn instead of failing on broken-page health checks
 --threshold <number>        pixelmatch threshold, default 0.1
 --max-diff-percent <num>    Failure threshold, default 1.0
 --selector <css>            Repeatable selector for style/layout extraction
 --hide <css>                Repeatable selector to hide before screenshot
 --config <file>             Config file, default .visual-parity.json
 --preset <name>             Repeatable preset bundle; currently: hubspot, nextjs-fonts, dev-toolbars
+--scroll-position <value>   Repeatable viewport scroll state; 0..1 = page progress, >1 = pixels
 --no-styles                 Disable computed-style extraction
 --json                      Print compact JSON only
 ```
@@ -237,6 +250,7 @@ Style/layout diffs are analyzed before reports are written:
 - width/height layout diffs are kept but lower-prioritized because they are often downstream symptoms
 - common fixes are synthesized for high-signal clusters such as missing `box-sizing: border-box`
 - same-origin stylesheets and inline styles are reported as provenance using a cascade-aware rule winner when the browser can read matching CSS rules
+- clusters with candidate-side provenance are ranked ahead of reference-only third-party noise
 - root-cause displays prioritize repeated findings and summarize hidden one-off tail findings
 - hidden preset elements are excluded from style snapshots as well as screenshots
 - `color` comparison uses effective text fill when pages rely on `-webkit-text-fill-color`
@@ -292,6 +306,19 @@ Persistent HMR websocket connections can keep dev pages from ever reaching `netw
 
 Before every screenshot, the browser pass now freezes animations/transitions, waits for fonts and decodable images, scrolls back to the top, closes open `details`/`dialog` elements, and waits for an idle frame. The run hard-fails before writing a misleading comparison if either page returns HTTP 4xx/5xx, has an empty body, or exposes no landmark/content selectors.
 
+If a live site intermittently returns an empty body or bot-blocks fresh headless contexts, use a persistent profile and retries:
+
+```bash
+visual-parity compare \
+  --reference https://example.com/products \
+  --candidate http://localhost:3000/products \
+  --persistent-context-dir .visual-parity/browser-profile \
+  --load-retries 2 \
+  --retry-delay-ms 1500
+```
+
+`--persistent-context-dir` lets Playwright reuse cookies and storage across runs. `--soft-page-health` is available for diagnosis when you want artifacts from a blocked page, but normal parity runs should keep the default hard-fail behavior.
+
 Accepted values:
 
 - `commit`
@@ -318,7 +345,9 @@ The JSON report includes:
 - screenshot paths
 - diff dimensions and mismatch count
 - `diffPercent`
+- `effectiveDiffPercent`, `effectiveMismatchedPixels`, and `maskedPixels`
 - pass/fail result based on `maxDiffPercent`
+- optional `scrollStates` captures when `scrollPositions` / `--scroll-position` is provided
 - computed-style, layout, and text diffs for selected elements
 - style-rule provenance on style diffs when available
 - root-cause clusters under `styles.analysis.clusters`

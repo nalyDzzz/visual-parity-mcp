@@ -151,13 +151,15 @@ function clusterStyleDiffs(diffs: StyleDiff[], pageDiffPercent = 0): StyleDiffCl
       examples: [diff],
       priority: priorityFor(diff),
       severity: severityFor(1),
-      suggestedFix: suggestedFixFor(diff)
+      suggestedFix: suggestedFixFor(diff),
+      fixability: fixabilityFor([diff])
     });
   }
 
   const clusters = Array.from(byKey.values());
   for (const cluster of clusters) {
     cluster.severity = severityFor(cluster.count);
+    cluster.fixability = fixabilityFor(cluster.examples);
     cluster.estimatedResolution = {
       diffs: cluster.count,
       diffPercent: diffs.length === 0 ? 0 : Number(((pageDiffPercent * cluster.count) / diffs.length).toFixed(4))
@@ -165,6 +167,8 @@ function clusterStyleDiffs(diffs: StyleDiff[], pageDiffPercent = 0): StyleDiffCl
   }
 
   return clusters.sort((a, b) => {
+    const fixabilityDelta = fixabilityRank(b.fixability) - fixabilityRank(a.fixability);
+    if (fixabilityDelta !== 0) return fixabilityDelta;
     const priorityDelta = priorityRank(b.priority) - priorityRank(a.priority);
     if (priorityDelta !== 0) return priorityDelta;
     return b.count - a.count;
@@ -224,6 +228,30 @@ function normalizeValue(value: unknown): string {
 function priorityRank(priority: StyleDiffCluster["priority"]): number {
   if (priority === "high") return 3;
   if (priority === "medium") return 2;
+  return 1;
+}
+
+function fixabilityFor(diffs: StyleDiff[]): StyleDiffCluster["fixability"] {
+  let candidate = 0;
+  let reference = 0;
+  for (const diff of diffs) {
+    if (hasSources(diff.localSources)) candidate += 1;
+    if (hasSources(diff.liveSources)) reference += 1;
+  }
+  if (candidate > 0 && reference === 0) return "candidate";
+  if (candidate === 0 && reference > 0) return "reference";
+  if (candidate > 0 && reference > 0) return "mixed";
+  return "unknown";
+}
+
+function hasSources(sources: StyleDiff["localSources"]): boolean {
+  return (sources ?? []).length > 0;
+}
+
+function fixabilityRank(fixability: StyleDiffCluster["fixability"]): number {
+  if (fixability === "candidate") return 4;
+  if (fixability === "mixed") return 3;
+  if (fixability === "unknown") return 2;
   return 1;
 }
 

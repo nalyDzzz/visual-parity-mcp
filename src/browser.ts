@@ -1,6 +1,6 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import type { PageHealth, ViewportOptions, WaitUntil } from "./types.js";
+import type { PageHealth, PageMaskRect, ViewportOptions, WaitUntil } from "./types.js";
 import { ensureDir } from "./utils.js";
 
 export const DEFAULT_VIEWPORT: Required<ViewportOptions> = {
@@ -14,11 +14,24 @@ export interface PreparePageOptions {
   waitMs?: number;
   timeoutMs?: number;
   hideSelectors?: string[];
+  loadRetries?: number;
+  retryDelayMs?: number;
+  softPageHealth?: boolean;
 }
 
 export interface BrowserPairOptions extends PreparePageOptions {
   viewport?: ViewportOptions;
+  userAgent?: string;
+  persistentContextDir?: string;
 }
+
+export interface BrowserSession {
+  context: BrowserContext;
+  close: () => Promise<void>;
+}
+
+const DEFAULT_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
 const STABILIZE_CSS = `
 *, *::before, *::after {
@@ -63,37 +76,88 @@ export async function createContext(browser: Browser, viewport?: ViewportOptions
   return browser.newContext({
     viewport: { width: normalized.width, height: normalized.height },
     deviceScaleFactor: normalized.deviceScaleFactor,
+    userAgent: DEFAULT_USER_AGENT,
+    locale: "en-US",
+    extraHTTPHeaders: {
+      "Accept-Language": "en-US,en;q=0.9"
+    },
     ignoreHTTPSErrors: true
   });
+}
+
+export async function createBrowserSession(options: BrowserPairOptions = {}): Promise<BrowserSession> {
+  const normalized = normalizeViewport(options.viewport);
+  const contextOptions = {
+    viewport: { width: normalized.width, height: normalized.height },
+    deviceScaleFactor: normalized.deviceScaleFactor,
+    userAgent: options.userAgent ?? DEFAULT_USER_AGENT,
+    locale: "en-US",
+    extraHTTPHeaders: {
+      "Accept-Language": "en-US,en;q=0.9"
+    },
+    ignoreHTTPSErrors: true
+  };
+
+  if (options.persistentContextDir) {
+    const context = await chromium.launchPersistentContext(options.persistentContextDir, {
+      ...contextOptions,
+      headless: true
+    });
+    return { context, close: () => context.close() };
+  }
+
+  const browser = await launchChromium();
+  const context = await browser.newContext(contextOptions);
+  return {
+    context,
+    close: async () => {
+      await context.close();
+      await browser.close();
+    }
+  };
 }
 
 export async function preparePage(page: Page, url: string, options: PreparePageOptions = {}): Promise<PageHealth> {
   const waitUntil = options.waitUntil ?? "networkidle";
   const timeout = options.timeoutMs ?? 30_000;
-  let status: number | undefined;
+  const retries = options.loadRetries ?? 0;
+  let lastHealth: PageHealth | undefined;
+  let lastError: unknown;
 
-  try {
-    const response = await page.goto(url, { waitUntil, timeout });
-    status = response?.status();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to load ${url}: ${message}`);
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    let status: number | undefined;
+    try {
+      if (attempt > 0) {
+        await page.waitForTimeout(options.retryDelayMs ?? 1_000);
+      }
+      const response = await page.goto(url, { waitUntil, timeout });
+      status = response?.status();
+
+      await page.addStyleTag({ content: STABILIZE_CSS });
+      await stabilizeDom(page);
+      const hideErrors = await hideSelectors(page, options.hideSelectors ?? []);
+      await waitForStablePage(page);
+
+      const waitMs = options.waitMs ?? 1_000;
+      if (waitMs > 0) {
+        await page.waitForTimeout(waitMs);
+      }
+
+      await waitForStablePage(page);
+      const health = await inspectPageHealth(page, url, status, hideErrors);
+      lastHealth = health;
+      if (health.ok || options.softPageHealth) return health;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  await page.addStyleTag({ content: STABILIZE_CSS });
-  await stabilizeDom(page);
-  const hideErrors = await hideSelectors(page, options.hideSelectors ?? []);
-  await waitForStablePage(page);
-
-  const waitMs = options.waitMs ?? 1_000;
-  if (waitMs > 0) {
-    await page.waitForTimeout(waitMs);
+  if (lastHealth) {
+    assertPageHealth(lastHealth);
   }
 
-  await waitForStablePage(page);
-  const health = await inspectPageHealth(page, url, status, hideErrors);
-  assertPageHealth(health);
-  return health;
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Failed to load ${url}: ${message}`);
 }
 
 export async function hideSelectors(page: Page, selectors: string[]): Promise<string[]> {
@@ -103,7 +167,16 @@ export async function hideSelectors(page: Page, selectors: string[]): Promise<st
       await page.locator(selector).evaluateAll((elements) => {
         for (const element of elements) {
           if (element instanceof HTMLElement || element instanceof SVGElement) {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            const hasText = (element.textContent || "").replace(/\s+/g, "").length > 0;
+            const hasMedia = element.matches("img, picture, video, canvas, svg, iframe") || element.querySelector("img, picture, video, canvas, svg, iframe") !== null;
+            const hasBackground = style.backgroundImage !== "none" || !/rgba?\(0, 0, 0(?:, 0)?\)|transparent/i.test(style.backgroundColor);
+            const hasBorder = ["Top", "Right", "Bottom", "Left"].some((side) => Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0);
+            const coversViewport = rect.width >= window.innerWidth * 0.85 && rect.height >= window.innerHeight * 0.85;
+            const shouldMask = !coversViewport || hasText || hasMedia || hasBackground || hasBorder;
             element.setAttribute("data-visual-parity-hidden", "true");
+            element.setAttribute("data-visual-parity-mask", shouldMask ? "true" : "false");
             element.style.setProperty("visibility", "hidden", "important");
             element.style.setProperty("pointer-events", "none", "important");
           }
@@ -224,6 +297,40 @@ export async function screenshotPage(
   await ensureDir(path.dirname(outputPath));
   await page.screenshot({ path: outputPath, fullPage: options.fullPage ?? false, animations: "disabled" });
   return outputPath;
+}
+
+export async function collectHiddenRects(page: Page, coordinates: "document" | "viewport" = "document"): Promise<PageMaskRect[]> {
+  return page.evaluate((mode) => {
+    return Array.from(document.querySelectorAll("[data-visual-parity-hidden='true']:not([data-visual-parity-mask='false'])"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const offsetX = mode === "document" ? window.scrollX : 0;
+        const offsetY = mode === "document" ? window.scrollY : 0;
+        const x = Math.max(0, rect.left + offsetX);
+        const y = Math.max(0, rect.top + offsetY);
+        const right = Math.min(window.innerWidth + offsetX, rect.right + offsetX);
+        const bottom = Math.min(mode === "document" ? document.documentElement.scrollHeight : window.innerHeight, rect.bottom + offsetY);
+        return {
+          selector: element.id ? `#${element.id}` : element.className ? `.${String(element.className).trim().split(/\s+/)[0]}` : element.tagName.toLowerCase(),
+          x: Number(x.toFixed(2)),
+          y: Number(y.toFixed(2)),
+          width: Number(Math.max(0, right - x).toFixed(2)),
+          height: Number(Math.max(0, bottom - y).toFixed(2))
+        };
+      })
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }, coordinates);
+}
+
+export async function scrollToPosition(page: Page, position: number): Promise<number> {
+  return page.evaluate(async (targetPosition) => {
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const requestedY = targetPosition >= 0 && targetPosition <= 1 ? maxY * targetPosition : targetPosition;
+    const y = Math.max(0, Math.min(maxY, requestedY));
+    window.scrollTo(0, y);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return Number(window.scrollY.toFixed(2));
+  }, position);
 }
 
 export async function screenshotFirstMatch(page: Page, selector: string, outputPath: string): Promise<string | undefined> {
