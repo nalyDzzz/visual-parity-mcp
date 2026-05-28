@@ -24,9 +24,9 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
       "[class*='hero' i]",
       "[class*='cta' i]",
       "[class*='button' i]",
-      "[class*='card' i]",
+      "[class~='card' i]",
       "[class*='rich-text' i]",
-      "[class*='module' i]"
+      "[class~='module' i]"
     ],
     hideSelectors: [
       "#hs-eu-cookie-confirmation",
@@ -36,6 +36,12 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
       "[id^='hs-eu-']",
       "[class*='hs-cookie' i]",
       "[class*='cookie' i]",
+      ".cky-consent-container",
+      ".cky-modal",
+      ".cky-overlay",
+      "[class^='cky-' i]",
+      "[class*=' cky-' i]",
+      "[id^='cky-' i]",
       "iframe[src*='hubspot']",
       "iframe[src*='hsforms']",
       "iframe[src*='hs-scripts']",

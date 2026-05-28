@@ -17,7 +17,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Per-project accepted deviations through `.visual-parity.json`
 - HTML and JSON reports
 - Noisy-element masking with custom selectors
-- Built-in `hubspot` preset for common HubSpot page noise
+- Built-in `hubspot` preset for common HubSpot and CookieYes page noise
 - Built-in `nextjs-fonts` preset for next/font fallback font-family noise
 - Configurable Playwright `waitUntil` behavior for local dev servers
 
@@ -230,10 +230,11 @@ Style/layout diffs are analyzed before reports are written:
 
 - repeated diffs are clustered by `kind`, `property`, reference value, and candidate value
 - four matching `border-*-color` diffs on the same element collapse into one `border-color` diff
+- next/font fallback font-family entries such as `"Inter Fallback"` are stripped before comparison
 - accepted deviations are filtered out
 - width/height layout diffs are kept but lower-prioritized because they are often downstream symptoms
 - common fixes are synthesized for high-signal clusters such as missing `box-sizing: border-box`
-- same-origin stylesheets and inline styles are reported as provenance when the browser can read matching CSS rules
+- same-origin stylesheets and inline styles are reported as provenance using a cascade-aware rule winner when the browser can read matching CSS rules
 
 Instead of reading dozens of repeated entries, the report can now show a single finding such as:
 
@@ -332,7 +333,7 @@ visual-parity compare \
   --wait-until domcontentloaded
 ```
 
-The preset adds common content selectors and masks common noisy elements such as cookie banners, HubSpot forms, chat widgets, CAPTCHA badges, and aria-live regions.
+The preset adds common content selectors and masks common noisy elements such as HubSpot/CookieYes cookie banners, HubSpot forms, chat widgets, CAPTCHA badges, and aria-live regions. Broad class selectors for card/module elements use whole-class matching, so project-specific names such as `feature-card__item` or `home-hero__module` do not explode into count noise just because they contain those words.
 
 You can add more masks with `--hide` or `hideSelectors`.
 
