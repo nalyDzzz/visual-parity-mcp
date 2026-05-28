@@ -1,6 +1,9 @@
+import type { AcceptedDeviation } from "./types.js";
+
 export interface VisualParityPreset {
   selectors?: string[];
   hideSelectors?: string[];
+  acceptedDeviations?: AcceptedDeviation[];
 }
 
 export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
@@ -45,13 +48,24 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
       "[data-testid*='chat' i]",
       "[aria-live]"
     ]
+  },
+  "nextjs-fonts": {
+    acceptedDeviations: [
+      {
+        selector: "*",
+        property: "font-family",
+        pattern: "Fallback",
+        reason: "Ignore next/font generated fallback font-family names."
+      }
+    ]
   }
 };
 
-export function applyPresets<T extends { selectors?: string[]; hideSelectors?: string[]; presets?: string[] }>(options: T): T {
+export function applyPresets<T extends { selectors?: string[]; hideSelectors?: string[]; acceptedDeviations?: AcceptedDeviation[]; presets?: string[] }>(options: T): T {
   const presetNames = options.presets ?? [];
   const selectors = [...(options.selectors ?? [])];
   const hideSelectors = [...(options.hideSelectors ?? [])];
+  const acceptedDeviations = [...(options.acceptedDeviations ?? [])];
 
   for (const name of presetNames) {
     const preset = VISUAL_PARITY_PRESETS[name];
@@ -60,11 +74,13 @@ export function applyPresets<T extends { selectors?: string[]; hideSelectors?: s
     }
     selectors.push(...(preset.selectors ?? []));
     hideSelectors.push(...(preset.hideSelectors ?? []));
+    acceptedDeviations.push(...(preset.acceptedDeviations ?? []));
   }
 
   return {
     ...options,
     selectors: Array.from(new Set(selectors)),
-    hideSelectors: Array.from(new Set(hideSelectors))
+    hideSelectors: Array.from(new Set(hideSelectors)),
+    acceptedDeviations
   };
 }

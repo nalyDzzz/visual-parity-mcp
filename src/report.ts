@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, StyleDiff } from "./types.js";
+import type { CrossPageFinding, InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, StyleDiff, StyleDiffCluster, StyleRuleSource } from "./types.js";
 import { ensureDir, escapeHtml, relativeForHtml } from "./utils.js";
 
 export async function writePageReport(report: PageComparisonReport): Promise<PageComparisonReport> {
@@ -61,7 +61,11 @@ function renderPageReport(report: PageComparisonReport): string {
       </div>
     </section>
     <section>
-      <h2>Top style/layout diffs</h2>
+      <h2>Root-cause clusters</h2>
+      ${clusterList(report.styles?.analysis?.clusters.slice(0, 20) ?? [])}
+    </section>
+    <section>
+      <h2>Top remaining style/layout diffs</h2>
       ${diffList(topDiffs)}
     </section>
     <section>
@@ -101,6 +105,10 @@ function renderInspectReport(report: InspectSelectorReport): string {
       </div>
     </section>
     <section>
+      <h2>Root-cause clusters</h2>
+      ${clusterList(report.styles.analysis?.clusters.slice(0, 20) ?? [])}
+    </section>
+    <section>
       <h2>Diffs</h2>
       ${diffList(report.styles.diffs.slice(0, 120))}
     </section>`
@@ -132,6 +140,10 @@ function renderRoutesSummary(report: RoutesComparisonReport): string {
       </dl>
     </section>
     <section>
+      <h2>Cross-page findings</h2>
+      ${crossPageFindingList(report.crossPageFindings?.slice(0, 30) ?? [], report.outputDir)}
+    </section>
+    <section>
       <h2>Routes</h2>
       <table><thead><tr><th>Status</th><th>Candidate URL</th><th>Diff</th><th>Report</th></tr></thead><tbody>${rows}</tbody></table>
     </section>`
@@ -147,11 +159,47 @@ function diffList(diffs: StyleDiff[]): string {
   return `<ol class="diffs">${diffs.map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("\n")}</ol>`;
 }
 
+function clusterList(clusters: StyleDiffCluster[]): string {
+  if (clusters.length === 0) return "<p>No root-cause clusters found.</p>";
+  return `<ol class="clusters">${clusters.map((cluster) => `<li>
+    <div class="cluster-title">${escapeHtml(formatCluster(cluster))}</div>
+    <div class="cluster-meta">${cluster.count.toLocaleString()} diffs across ${cluster.selectors.length.toLocaleString()} selectors${cluster.estimatedResolution?.diffPercent ? `, approx ${cluster.estimatedResolution.diffPercent.toFixed(3)}% pixel delta` : ""}</div>
+    ${cluster.suggestedFix ? `<div class="suggestion">${escapeHtml(cluster.suggestedFix)}</div>` : ""}
+    <ul>${cluster.examples.slice(0, 3).map((diff) => `<li><code>${escapeHtml(formatDiff(diff))}</code></li>`).join("")}</ul>
+  </li>`).join("\n")}</ol>`;
+}
+
+function crossPageFindingList(findings: CrossPageFinding[], outputDir: string): string {
+  if (findings.length === 0) return "<p>No cross-page findings found.</p>";
+  return `<ol class="clusters">${findings.map((finding) => `<li>
+    <div class="cluster-title">${escapeHtml(formatCrossPageFinding(finding))}</div>
+    <div class="cluster-meta">${finding.totalDiffs.toLocaleString()} diffs on ${finding.pageCount}/${finding.totalPages} pages, approx ${finding.estimatedDiffPercent.toFixed(3)}% cumulative pixel delta</div>
+    ${finding.suggestedFix ? `<div class="suggestion">${escapeHtml(finding.suggestedFix)}</div>` : ""}
+    <ul>${finding.pages.slice(0, 5).map((page) => {
+      const href = path.relative(outputDir, page.reportHtml).split(path.sep).join("/");
+      return `<li><a href="${escapeHtml(href)}">${escapeHtml(page.localUrl)}</a> (${page.diffCount.toLocaleString()} diffs)</li>`;
+    }).join("")}</ul>
+  </li>`).join("\n")}</ol>`;
+}
+
 export function formatDiff(diff: StyleDiff): string {
   const index = typeof diff.index === "number" ? `[${diff.index}]` : "";
   const prop = diff.property ? ` ${diff.property}` : "";
   const delta = typeof diff.delta === "number" ? ` delta=${diff.delta}` : "";
-  return `${diff.selector}${index} ${diff.kind}${prop} reference=${diff.live ?? ""} candidate=${diff.local ?? ""}${delta}`;
+  const liveSource = formatSource(diff.liveSources);
+  const localSource = formatSource(diff.localSources);
+  const sources = liveSource || localSource ? ` source=${liveSource || "unknown"} candidateSource=${localSource || "unknown"}` : "";
+  return `${diff.selector}${index} ${diff.kind}${prop} reference=${diff.live ?? ""} candidate=${diff.local ?? ""}${delta}${sources}`;
+}
+
+export function formatCluster(cluster: StyleDiffCluster): string {
+  const prop = cluster.property ? ` ${cluster.property}` : "";
+  return `${cluster.kind}${prop}: reference=${cluster.live ?? ""} candidate=${cluster.local ?? ""}`;
+}
+
+export function formatCrossPageFinding(finding: CrossPageFinding): string {
+  const prop = finding.property ? ` ${finding.property}` : "";
+  return `${finding.kind}${prop}: reference=${finding.live ?? ""} candidate=${finding.local ?? ""}`;
 }
 
 function htmlShell(title: string, body: string): string {
@@ -185,6 +233,11 @@ function htmlShell(title: string, body: string): string {
     img { display: block; max-width: 100%; height: auto; }
     .diffs { padding-left: 22px; }
     .diffs li { margin: 7px 0; }
+    .clusters { padding-left: 22px; }
+    .clusters > li { margin: 0 0 18px; }
+    .cluster-title { font-weight: 800; font-size: 16px; }
+    .cluster-meta { color: var(--muted); margin: 3px 0 8px; }
+    .suggestion { padding: 10px 12px; border: 1px solid var(--line); background: rgba(167, 139, 250, 0.1); border-radius: 8px; margin: 8px 0; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); }
@@ -197,4 +250,12 @@ function htmlShell(title: string, body: string): string {
 ${body}
 </body>
 </html>`;
+}
+
+function formatSource(sources?: StyleRuleSource[]): string | undefined {
+  const source = sources?.[sources.length - 1];
+  if (!source) return undefined;
+  if (source.type === "inline") return "<inline style>";
+  const href = source.href ? source.href.replace(/^https?:\/\/[^/]+/i, "") : "<inline stylesheet>";
+  return `${href}${source.selectorText ? ` (${source.selectorText})` : ""}`;
 }

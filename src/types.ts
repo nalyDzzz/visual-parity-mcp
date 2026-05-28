@@ -11,6 +11,7 @@ export interface ComparePagesOptions {
   localUrl: string;
   outputDir?: string;
   name?: string;
+  configPath?: string;
   viewport?: ViewportOptions;
   fullPage?: boolean;
   waitUntil?: WaitUntil;
@@ -23,6 +24,7 @@ export interface ComparePagesOptions {
   compareStyles?: boolean;
   hideSelectors?: string[];
   presets?: string[];
+  acceptedDeviations?: AcceptedDeviation[];
   maxElementsPerSelector?: number;
   diffLimit?: number;
 }
@@ -39,6 +41,7 @@ export interface InspectSelectorOptions {
   selector: string;
   outputDir?: string;
   name?: string;
+  configPath?: string;
   viewport?: ViewportOptions;
   waitUntil?: WaitUntil;
   waitMs?: number;
@@ -47,8 +50,21 @@ export interface InspectSelectorOptions {
   styleProperties?: string[];
   hideSelectors?: string[];
   presets?: string[];
+  acceptedDeviations?: AcceptedDeviation[];
   maxElementsPerSelector?: number;
   diffLimit?: number;
+}
+
+export interface AcceptedDeviation {
+  selector?: string;
+  property?: string;
+  kind?: StyleDiff["kind"];
+  pattern?: string;
+  reason?: string;
+}
+
+export interface VisualParityConfig {
+  acceptedDeviations?: AcceptedDeviation[];
 }
 
 export interface StyleElementSnapshot {
@@ -63,6 +79,14 @@ export interface StyleElementSnapshot {
     height: number;
   };
   styles: Record<string, string>;
+  styleSources?: Record<string, StyleRuleSource[]>;
+}
+
+export interface StyleRuleSource {
+  type: "inline" | "rule";
+  href?: string;
+  selectorText?: string;
+  value: string;
 }
 
 export interface StyleSelectorSnapshot {
@@ -80,6 +104,52 @@ export interface StyleDiff {
   live?: string | number;
   local?: string | number;
   delta?: number;
+  liveSources?: StyleRuleSource[];
+  localSources?: StyleRuleSource[];
+}
+
+export interface StyleDiffCluster {
+  id: string;
+  kind: StyleDiff["kind"];
+  property?: string;
+  live?: string | number;
+  local?: string | number;
+  count: number;
+  selectors: string[];
+  examples: StyleDiff[];
+  priority: "high" | "medium" | "low";
+  suggestedFix?: string;
+  estimatedResolution?: {
+    diffs: number;
+    diffPercent?: number;
+  };
+}
+
+export interface StyleAnalysis {
+  rawDiffCount: number;
+  ignoredDiffCount: number;
+  diffCount: number;
+  clusters: StyleDiffCluster[];
+}
+
+export interface CrossPageFinding {
+  id: string;
+  kind: StyleDiff["kind"];
+  property?: string;
+  live?: string | number;
+  local?: string | number;
+  pageCount: number;
+  totalPages: number;
+  totalDiffs: number;
+  estimatedDiffPercent: number;
+  selectors: string[];
+  pages: Array<{
+    liveUrl: string;
+    localUrl: string;
+    diffCount: number;
+    reportHtml: string;
+  }>;
+  suggestedFix?: string;
 }
 
 export interface PageComparisonReport {
@@ -105,8 +175,10 @@ export interface PageComparisonReport {
   };
   styles?: {
     comparedSelectors: number;
+    rawDiffCount?: number;
     diffCount: number;
     diffs: StyleDiff[];
+    analysis?: StyleAnalysis;
     live: StyleSelectorSnapshot[];
     local: StyleSelectorSnapshot[];
   };
@@ -123,6 +195,7 @@ export interface RoutesComparisonReport {
   passed: number;
   failed: number;
   averageDiffPercent: number;
+  crossPageFindings?: CrossPageFinding[];
   results: PageComparisonReport[];
   summaryJson: string;
   summaryHtml: string;
@@ -140,8 +213,10 @@ export interface InspectSelectorReport {
     localCrop?: string;
   };
   styles: {
+    rawDiffCount?: number;
     diffCount: number;
     diffs: StyleDiff[];
+    analysis?: StyleAnalysis;
     live: StyleSelectorSnapshot[];
     local: StyleSelectorSnapshot[];
   };

@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { comparePages, inspectSelector } from "./compare.js";
-import { formatDiff } from "./report.js";
+import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes } from "./routes.js";
 import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport } from "./types.js";
 
@@ -20,6 +20,14 @@ const viewportSchema = z
   })
   .default({ width: 1440, height: 1200, deviceScaleFactor: 1 });
 
+const acceptedDeviationSchema = z.object({
+  selector: z.string().optional().describe("Selector to ignore, supports '*' wildcard"),
+  property: z.string().optional().describe("CSS/style property to ignore"),
+  kind: z.enum(["count", "style", "rect", "text"]).optional(),
+  pattern: z.string().optional().describe("Regex matched against reference or candidate value"),
+  reason: z.string().optional()
+});
+
 const comparePagesSchema = {
   referenceUrl: z.string().url().optional().describe("Reference/source page URL"),
   candidateUrl: z.string().url().optional().describe("Candidate/target page URL"),
@@ -27,6 +35,7 @@ const comparePagesSchema = {
   localUrl: z.string().url().optional().describe("Alias for candidateUrl"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   name: z.string().optional().describe("Run name / artifact subdirectory"),
+  configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
   viewport: viewportSchema.optional(),
   fullPage: z.boolean().default(false),
   waitUntil: waitUntilSchema,
@@ -37,7 +46,8 @@ const comparePagesSchema = {
   selectors: z.array(z.string()).optional(),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
-  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot', 'nextjs-fonts']"),
+  acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
   compareStyles: z.boolean().default(true)
@@ -50,6 +60,7 @@ const compareRoutesSchema = {
   localBaseUrl: z.string().url().optional().describe("Alias for candidateBaseUrl"),
   paths: z.array(z.string()).min(1).describe("Route paths to compare"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
+  configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
   viewport: viewportSchema.optional(),
   fullPage: z.boolean().default(false),
   waitUntil: waitUntilSchema,
@@ -60,7 +71,8 @@ const compareRoutesSchema = {
   selectors: z.array(z.string()).optional(),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
-  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot', 'nextjs-fonts']"),
+  acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
   maxElementsPerSelector: z.number().int().positive().default(5),
   diffLimit: z.number().int().positive().default(25),
   compareStyles: z.boolean().default(true)
@@ -74,13 +86,15 @@ const inspectSelectorSchema = {
   selector: z.string().min(1).describe("CSS selector to inspect"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   name: z.string().optional().describe("Run name / artifact subdirectory"),
+  configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
   viewport: viewportSchema.optional(),
   waitUntil: waitUntilSchema,
   waitMs: z.number().int().nonnegative().default(1000),
   timeoutMs: z.number().int().positive().default(30000),
   styleProperties: z.array(z.string()).optional(),
   hideSelectors: z.array(z.string()).optional(),
-  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot']"),
+  presets: z.array(z.string()).optional().describe("Preset selector/noise mask bundles, e.g. ['hubspot', 'nextjs-fonts']"),
+  acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
   maxElementsPerSelector: z.number().int().positive().default(10),
   diffLimit: z.number().int().positive().default(25)
 };
@@ -113,7 +127,8 @@ server.tool("inspect_selector", "Deep inspect one selector between a reference a
     screenshots: report.screenshots,
     liveCount: report.styles.live[0]?.count ?? 0,
     localCount: report.styles.local[0]?.count ?? 0,
-    topDiffs: report.styles.diffs.slice(0, input.diffLimit ?? 25).map(formatDiff)
+    topDiffs: report.styles.diffs.slice(0, input.diffLimit ?? 25).map(formatDiff),
+    topRootCauses: report.styles.analysis?.clusters.slice(0, input.diffLimit ?? 25).map(formatCluster) ?? []
   });
 });
 
@@ -198,6 +213,15 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
     styleDiffCount: report.styles?.diffCount ?? 0,
+    rawStyleDiffCount: report.styles?.rawDiffCount ?? report.styles?.diffCount ?? 0,
+    topRootCauses: report.styles?.analysis?.clusters.slice(0, limit).map((cluster) => ({
+      finding: formatCluster(cluster),
+      count: cluster.count,
+      selectors: cluster.selectors,
+      estimatedResolution: cluster.estimatedResolution,
+      suggestedFix: cluster.suggestedFix,
+      examples: cluster.examples.slice(0, 3).map(formatDiff)
+    })) ?? [],
     topDiffs: report.styles?.diffs.slice(0, limit).map(formatDiff) ?? []
   };
 }
@@ -210,6 +234,16 @@ function compactRoutesSummary(report: RoutesComparisonReport, limit: number) {
     averageDiffPercent: Number(report.averageDiffPercent.toFixed(4)),
     summaryJson: report.summaryJson,
     summaryHtml: report.summaryHtml,
+    crossPageFindings: report.crossPageFindings?.slice(0, limit).map((finding) => ({
+      finding: formatCrossPageFinding(finding),
+      pageCount: finding.pageCount,
+      totalPages: finding.totalPages,
+      totalDiffs: finding.totalDiffs,
+      estimatedDiffPercent: finding.estimatedDiffPercent,
+      selectors: finding.selectors,
+      suggestedFix: finding.suggestedFix,
+      pages: finding.pages.slice(0, 5)
+    })) ?? [],
     results: report.results.map((result) => ({
       passed: result.visual.passed,
       diffPercent: Number(result.visual.diffPercent.toFixed(4)),

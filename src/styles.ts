@@ -20,8 +20,10 @@ export async function captureStyleSnapshots(
             const style = window.getComputedStyle(element);
             const rect = element.getBoundingClientRect();
             const styles: Record<string, string> = {};
+            const styleSources: Record<string, Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }>> = {};
             for (const prop of props) {
               styles[prop] = style.getPropertyValue(prop);
+              styleSources[prop] = findStyleSources(element, prop).slice(-5);
             }
             return {
               selector: selectorArg,
@@ -34,9 +36,93 @@ export async function captureStyleSnapshots(
                 width: Number(rect.width.toFixed(2)),
                 height: Number(rect.height.toFixed(2))
               },
-              styles
+              styles,
+              styleSources
             };
           });
+
+          function findStyleSources(element: Element, property: string): Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }> {
+            const sources: Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }> = [];
+            const targets = inheritedProperty(property) ? ancestorChain(element) : [element];
+            const candidateProperties = sourceProperties(property);
+
+            for (const target of targets) {
+              if (target instanceof HTMLElement || target instanceof SVGElement) {
+                const inlineValue = firstDeclaredValue(target.style, candidateProperties);
+                if (inlineValue) sources.push({ type: "inline", value: inlineValue });
+              }
+
+              for (const sheet of Array.from(document.styleSheets)) {
+                let rules: CSSRuleList;
+                try {
+                  rules = sheet.cssRules;
+                } catch {
+                  continue;
+                }
+                collectRuleSources(target, candidateProperties, sheet.href ?? undefined, Array.from(rules), sources);
+              }
+            }
+
+            return sources;
+          }
+
+          function collectRuleSources(
+            element: Element,
+            properties: string[],
+            href: string | undefined,
+            rules: CSSRule[],
+            sources: Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }>
+          ): void {
+            for (const rule of rules) {
+              if ("cssRules" in rule && !("selectorText" in rule && "style" in rule)) {
+                collectRuleSources(element, properties, href, Array.from((rule as CSSGroupingRule).cssRules), sources);
+                continue;
+              }
+              if (!("selectorText" in rule) || !("style" in rule)) continue;
+              const styleRule = rule as CSSStyleRule;
+              const value = firstDeclaredValue(styleRule.style, properties);
+              if (!value) continue;
+              try {
+                if (element.matches(styleRule.selectorText)) {
+                  sources.push({ type: "rule", href, selectorText: styleRule.selectorText, value });
+                }
+              } catch {
+                continue;
+              }
+            }
+          }
+
+          function firstDeclaredValue(style: CSSStyleDeclaration, properties: string[]): string {
+            for (const property of properties) {
+              const value = style.getPropertyValue(property);
+              if (value) return value;
+            }
+            return "";
+          }
+
+          function sourceProperties(property: string): string[] {
+            const properties = [property];
+            if (property.startsWith("padding-")) properties.push("padding");
+            if (property.startsWith("margin-")) properties.push("margin");
+            if (property.startsWith("border-") && property.endsWith("-color")) properties.push("border-color", "border");
+            if (property === "background-color" || property === "background-image" || property === "background-size" || property === "background-position") properties.push("background");
+            if (property === "row-gap" || property === "column-gap") properties.push("gap");
+            return properties;
+          }
+
+          function inheritedProperty(property: string): boolean {
+            return ["font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform", "color"].includes(property);
+          }
+
+          function ancestorChain(element: Element): Element[] {
+            const elements: Element[] = [];
+            let current: Element | null = element;
+            while (current) {
+              elements.push(current);
+              current = current.parentElement;
+            }
+            return elements;
+          }
 
           return {
             selector: selectorArg,
@@ -91,7 +177,7 @@ export function diffStyleSnapshots(
 
       diffRects(diffs, selector, index, liveElement, localElement, rectTolerancePx);
       diffText(diffs, selector, index, liveElement.text, localElement.text);
-      diffStyles(diffs, selector, index, liveElement.styles, localElement.styles);
+      diffStyles(diffs, selector, index, liveElement.styles, localElement.styles, liveElement.styleSources, localElement.styleSources);
     }
   }
 
@@ -129,14 +215,25 @@ function diffStyles(
   selector: string,
   index: number,
   liveStyles: Record<string, string>,
-  localStyles: Record<string, string>
+  localStyles: Record<string, string>,
+  liveSources?: StyleElementSnapshot["styleSources"],
+  localSources?: StyleElementSnapshot["styleSources"]
 ): void {
   const properties = Array.from(new Set([...Object.keys(liveStyles), ...Object.keys(localStyles)]));
   for (const property of properties) {
     const live = liveStyles[property] ?? "";
     const local = localStyles[property] ?? "";
     if (normalizeCssValue(live) !== normalizeCssValue(local)) {
-      diffs.push({ selector, index, kind: "style", property, live, local });
+      diffs.push({
+        selector,
+        index,
+        kind: "style",
+        property,
+        live,
+        local,
+        liveSources: liveSources?.[property],
+        localSources: localSources?.[property]
+      });
     }
   }
 }

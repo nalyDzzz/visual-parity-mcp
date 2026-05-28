@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { aggregateCrossPageFindings } from "./analysis.js";
 import { comparePages } from "./compare.js";
 import { writeRoutesSummary } from "./report.js";
 import type { CompareRoutesOptions, RoutesComparisonReport } from "./types.js";
@@ -28,6 +29,7 @@ export async function compareRoutes(options: CompareRoutesOptions): Promise<Rout
   const failed = results.length - passed;
   const averageDiffPercent =
     results.length === 0 ? 0 : results.reduce((sum, result) => sum + result.visual.diffPercent, 0) / results.length;
+  const crossPageFindings = aggregateCrossPageFindings(results);
 
   const report: RoutesComparisonReport = {
     createdAt: new Date().toISOString(),
@@ -38,6 +40,7 @@ export async function compareRoutes(options: CompareRoutesOptions): Promise<Rout
     passed,
     failed,
     averageDiffPercent,
+    crossPageFindings,
     results,
     summaryJson: path.join(outputDir, "summary.json"),
     summaryHtml: path.join(outputDir, "summary.html")

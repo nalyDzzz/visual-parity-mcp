@@ -11,9 +11,14 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Playwright Chromium page capture
 - Pixel-level screenshot diffs with configurable thresholds
 - Computed style, text, and bounding-box diffs by selector
+- Basic stylesheet provenance for matched computed-style rules
+- Root-cause clustering for repeated style/layout diffs
+- Cross-page aggregation for route comparisons
+- Per-project accepted deviations through `.visual-parity.json`
 - HTML and JSON reports
 - Noisy-element masking with custom selectors
 - Built-in `hubspot` preset for common HubSpot page noise
+- Built-in `nextjs-fonts` preset for next/font fallback font-family noise
 - Configurable Playwright `waitUntil` behavior for local dev servers
 
 ## Requirements
@@ -107,12 +112,15 @@ Compare one reference URL against one candidate URL.
   "maxDiffPercent": 1,
   "selectors": ["header", "main", "h1", ".hero", ".cta"],
   "hideSelectors": [".cookie-banner", ".chat-widget"],
-  "presets": ["hubspot"],
+  "presets": ["hubspot", "nextjs-fonts"],
+  "acceptedDeviations": [
+    { "selector": "header", "property": "position", "reason": "Intentional sticky chrome" }
+  ],
   "compareStyles": true
 }
 ```
 
-The response includes pass/fail status, pixel diff percentage, report paths, screenshot paths, style diff count, and top computed-style differences.
+The response includes pass/fail status, pixel diff percentage, report paths, screenshot paths, style diff counts, top root-cause clusters, suggested fixes when available, and remaining raw examples.
 
 ### `compare_routes`
 
@@ -124,9 +132,11 @@ Compare multiple paths under a reference and candidate base URL.
   "candidateBaseUrl": "http://localhost:3000",
   "paths": ["/", "/about", "/pricing"],
   "waitUntil": "domcontentloaded",
-  "presets": ["hubspot"]
+  "presets": ["hubspot", "nextjs-fonts"]
 }
 ```
+
+Route summaries include `crossPageFindings`, sorted by impact, so global issues such as box sizing, shared footer typography, or repeated spacing drift rise above page-by-page noise.
 
 ### `inspect_selector`
 
@@ -208,10 +218,59 @@ visual-parity inspect \
 --max-diff-percent <num>    Failure threshold, default 1.0
 --selector <css>            Repeatable selector for style/layout extraction
 --hide <css>                Repeatable selector to hide before screenshot
---preset <name>             Repeatable preset bundle; currently: hubspot
+--config <file>             Config file, default .visual-parity.json
+--preset <name>             Repeatable preset bundle; currently: hubspot, nextjs-fonts
 --no-styles                 Disable computed-style extraction
 --json                      Print compact JSON only
 ```
+
+## Root-Cause Analysis
+
+Style/layout diffs are analyzed before reports are written:
+
+- repeated diffs are clustered by `kind`, `property`, reference value, and candidate value
+- four matching `border-*-color` diffs on the same element collapse into one `border-color` diff
+- accepted deviations are filtered out
+- width/height layout diffs are kept but lower-prioritized because they are often downstream symptoms
+- common fixes are synthesized for high-signal clusters such as missing `box-sizing: border-box`
+- same-origin stylesheets and inline styles are reported as provenance when the browser can read matching CSS rules
+
+Instead of reading dozens of repeated entries, the report can now show a single finding such as:
+
+```text
+style box-sizing: reference=border-box candidate=content-box (45 diffs)
+fix: Add `*, *::before, *::after { box-sizing: border-box; }` to the candidate global CSS.
+```
+
+## Project Config
+
+Create `.visual-parity.json` in the working directory to permanently suppress intentional or known-noisy diffs:
+
+```json
+{
+  "acceptedDeviations": [
+    {
+      "selector": "header",
+      "property": "position",
+      "reason": "Intentional sticky chrome"
+    },
+    {
+      "selector": "*",
+      "property": "font-family",
+      "pattern": ".*Fallback.*",
+      "reason": "Ignore generated next/font fallback families"
+    }
+  ]
+}
+```
+
+Accepted deviations support:
+
+- `selector`: exact selector or `*` wildcard
+- `property`: CSS/style property, rect property, or `text`
+- `kind`: one of `count`, `style`, `rect`, or `text`
+- `pattern`: regex matched against either reference or candidate value
+- `reason`: documentation-only note
 
 ## Navigation Readiness
 
@@ -253,6 +312,9 @@ The JSON report includes:
 - `diffPercent`
 - pass/fail result based on `maxDiffPercent`
 - computed-style, layout, and text diffs for selected elements
+- style-rule provenance on style diffs when available
+- root-cause clusters under `styles.analysis.clusters`
+- route-level cross-page clusters under `crossPageFindings`
 
 Artifact names still use `live` and `local` for backward compatibility.
 

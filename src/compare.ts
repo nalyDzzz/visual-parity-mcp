@@ -3,7 +3,9 @@ import path from "node:path";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import sharp from "sharp";
+import { analyzeStyleDiffs } from "./analysis.js";
 import { createContext, launchChromium, normalizeViewport, preparePage, screenshotFirstMatch, screenshotPage } from "./browser.js";
+import { loadVisualParityConfig, mergeAcceptedDeviations } from "./config.js";
 import { DEFAULT_SELECTORS, DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
 import { applyPresets } from "./presets.js";
 import { writeInspectReport, writePageReport } from "./report.js";
@@ -13,6 +15,8 @@ import { DEFAULT_OUTPUT_DIR, ensureDir, makeRunDir, slugify, uniqueNonEmpty } fr
 
 export async function comparePages(rawOptions: ComparePagesOptions): Promise<PageComparisonReport> {
   const options = applyPresets(rawOptions);
+  const config = await loadVisualParityConfig(options.configPath);
+  const acceptedDeviations = mergeAcceptedDeviations(config.acceptedDeviations, options.acceptedDeviations);
   const viewport = normalizeViewport(options.viewport);
   const threshold = options.threshold ?? 0.1;
   const maxDiffPercent = options.maxDiffPercent ?? 1;
@@ -60,11 +64,14 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
       const maxElements = options.maxElementsPerSelector ?? 5;
       const liveStyles = await captureStyleSnapshots(livePage, selectors, properties, maxElements);
       const localStyles = await captureStyleSnapshots(localPage, selectors, properties, maxElements);
-      const diffs = diffStyleSnapshots(liveStyles, localStyles);
+      const rawDiffs = diffStyleSnapshots(liveStyles, localStyles);
+      const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.diffPercent);
       report.styles = {
         comparedSelectors: selectors.length,
+        rawDiffCount: rawDiffs.length,
         diffCount: diffs.length,
         diffs,
+        analysis,
         live: liveStyles,
         local: localStyles
       };
@@ -79,6 +86,8 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
 
 export async function inspectSelector(rawOptions: InspectSelectorOptions): Promise<InspectSelectorReport> {
   const options = applyPresets(rawOptions);
+  const config = await loadVisualParityConfig(options.configPath);
+  const acceptedDeviations = mergeAcceptedDeviations(config.acceptedDeviations, options.acceptedDeviations);
   const viewport = normalizeViewport(options.viewport);
   const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
   const runDir = makeRunDir(outputDir, options.name, `inspect-${slugify(options.selector)}-${Date.now()}`);
@@ -97,7 +106,8 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
     const maxElements = options.maxElementsPerSelector ?? 10;
     const live = await captureStyleSnapshots(livePage, [options.selector], properties, maxElements);
     const local = await captureStyleSnapshots(localPage, [options.selector], properties, maxElements);
-    const diffs = diffStyleSnapshots(live, local);
+    const rawDiffs = diffStyleSnapshots(live, local);
+    const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations);
 
     let liveCrop: string | undefined;
     let localCrop: string | undefined;
@@ -121,8 +131,10 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
       viewport,
       screenshots: { liveCrop, localCrop },
       styles: {
+        rawDiffCount: rawDiffs.length,
         diffCount: diffs.length,
         diffs,
+        analysis,
         live,
         local
       },

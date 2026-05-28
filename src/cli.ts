@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { comparePages, inspectSelector } from "./compare.js";
-import { formatDiff } from "./report.js";
+import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes, readPathsFile } from "./routes.js";
 import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, WaitUntil } from "./types.js";
 import { DEFAULT_OUTPUT_DIR, toNumber, uniqueNonEmpty } from "./utils.js";
@@ -22,6 +22,7 @@ program
   .option("--local <url>", "Alias for --candidate")
   .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--name <slug>", "Run name")
+  .option("--config <file>", "Visual parity config file, default .visual-parity.json")
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
@@ -33,7 +34,7 @@ program
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
-  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -59,6 +60,7 @@ program
   .option("--path <path>", "Route path to compare", collect, [])
   .option("--paths-file <file>", "Newline-separated route paths")
   .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+  .option("--config <file>", "Visual parity config file, default .visual-parity.json")
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
@@ -70,7 +72,7 @@ program
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
   .option("--selector <css>", "Selector to compare styles/layout for", collect, [])
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
-  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
   .option("--no-styles", "Disable computed style extraction")
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
@@ -108,6 +110,7 @@ program
   .requiredOption("--selector <css>", "CSS selector to inspect")
   .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--name <slug>", "Run name")
+  .option("--config <file>", "Visual parity config file, default .visual-parity.json")
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
@@ -115,7 +118,7 @@ program
   .option("--wait-ms <ms>", "Extra wait after page load", "1000")
   .option("--timeout-ms <ms>", "Navigation timeout", "30000")
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
-  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
   .option("--json", "Print compact JSON only", false)
   .action(async (opts) => {
     await runCommand(async () => {
@@ -125,6 +128,7 @@ program
         selector: opts.selector,
         outputDir: opts.out,
         name: opts.name,
+        configPath: opts.config,
         viewport: {
           width: toNumber(opts.width, 1440),
           height: toNumber(opts.height, 1200),
@@ -143,7 +147,8 @@ program
         reportJson: report.reportJson,
         reportHtml: report.reportHtml,
         screenshots: report.screenshots,
-        topDiffs: report.styles.diffs.slice(0, 25).map(formatDiff)
+        topDiffs: report.styles.diffs.slice(0, 25).map(formatDiff),
+        topRootCauses: report.styles.analysis?.clusters.slice(0, 10).map(formatCluster) ?? []
       };
       console.log(opts.json ? JSON.stringify(summary, null, 2) : humanInspectSummary(summary));
     });
@@ -166,6 +171,7 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
     localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
     outputDir: opts.out,
     name: opts.name,
+    configPath: opts.config,
     viewport: {
       width: toNumber(opts.width, 1440),
       height: toNumber(opts.height, 1200),
@@ -228,7 +234,8 @@ function compactPageSummary(report: PageComparisonReport) {
     screenshots: report.screenshots,
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
-    topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? []
+    topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? [],
+    topRootCauses: report.styles?.analysis?.clusters.slice(0, 10).map(formatCluster) ?? []
   };
 }
 
@@ -240,6 +247,7 @@ function compactRoutesSummary(report: RoutesComparisonReport) {
     averageDiffPercent: report.averageDiffPercent,
     summaryJson: report.summaryJson,
     summaryHtml: report.summaryHtml,
+    crossPageFindings: report.crossPageFindings?.slice(0, 10).map(formatCrossPageFinding) ?? [],
     results: report.results.map((result) => ({
       passed: result.visual.passed,
       localUrl: result.localUrl,
@@ -259,7 +267,14 @@ function printPageReport(report: PageComparisonReport): void {
   console.log(`  json:   ${report.reportJson}`);
   console.log(`  diff:   ${report.screenshots.diff}`);
   const diffs = report.styles?.diffs.slice(0, 10) ?? [];
-  if (diffs.length > 0) {
+  const clusters = report.styles?.analysis?.clusters.slice(0, 10) ?? [];
+  if (clusters.length > 0) {
+    console.log("Top root causes:");
+    for (const cluster of clusters) {
+      console.log(`  ${formatCluster(cluster)} (${cluster.count} diffs)`);
+      if (cluster.suggestedFix) console.log(`    fix: ${cluster.suggestedFix}`);
+    }
+  } else if (diffs.length > 0) {
     console.log("Top diffs:");
     for (const diff of diffs) console.log(`  ${formatDiff(diff)}`);
   }
@@ -272,12 +287,20 @@ function printRoutesReport(report: RoutesComparisonReport): void {
   console.log(`Routes: ${report.total} total, ${report.passed} passed, ${report.failed} failed`);
   console.log(`Average diff: ${report.averageDiffPercent.toFixed(3)}%`);
   console.log(`Summary: ${report.summaryHtml}`);
+  const findings = report.crossPageFindings?.slice(0, 10) ?? [];
+  if (findings.length > 0) {
+    console.log("Cross-page findings:");
+    for (const finding of findings) {
+      console.log(`  ${formatCrossPageFinding(finding)} (${finding.totalDiffs} diffs on ${finding.pageCount}/${finding.totalPages} pages)`);
+      if (finding.suggestedFix) console.log(`    fix: ${finding.suggestedFix}`);
+    }
+  }
   for (const result of report.results) {
     console.log(`  ${result.visual.passed ? "PASS" : "FAIL"} ${result.localUrl} ${result.visual.diffPercent.toFixed(3)}%`);
   }
 }
 
-function humanInspectSummary(summary: { selector: string; diffCount: number; reportJson: string; reportHtml: string; screenshots: unknown; topDiffs: string[] }): string {
+function humanInspectSummary(summary: { selector: string; diffCount: number; reportJson: string; reportHtml: string; screenshots: unknown; topDiffs: string[]; topRootCauses: string[] }): string {
   const lines = [
     `Selector inspect: ${summary.selector}`,
     `Diffs: ${summary.diffCount}`,
@@ -285,7 +308,10 @@ function humanInspectSummary(summary: { selector: string; diffCount: number; rep
     `JSON: ${summary.reportJson}`,
     `Screenshots: ${JSON.stringify(summary.screenshots)}`
   ];
-  if (summary.topDiffs.length > 0) {
+  if (summary.topRootCauses.length > 0) {
+    lines.push("Top root causes:");
+    for (const cluster of summary.topRootCauses.slice(0, 10)) lines.push(`  ${cluster}`);
+  } else if (summary.topDiffs.length > 0) {
     lines.push("Top diffs:");
     for (const diff of summary.topDiffs.slice(0, 10)) lines.push(`  ${diff}`);
   }
