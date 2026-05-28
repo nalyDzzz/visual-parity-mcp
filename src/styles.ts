@@ -20,10 +20,8 @@ export async function captureStyleSnapshots(
             const style = window.getComputedStyle(element);
             const rect = element.getBoundingClientRect();
             const styles: Record<string, string> = {};
-            const styleSources: Record<string, Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }>> = {};
             for (const prop of props) {
               styles[prop] = computedCssValue(style, prop);
-              styleSources[prop] = findStyleSources(element, prop, styles[prop]);
             }
             return {
               selector: selectorArg,
@@ -36,10 +34,62 @@ export async function captureStyleSnapshots(
                 width: Number(rect.width.toFixed(2)),
                 height: Number(rect.height.toFixed(2))
               },
-              styles,
-              styleSources
+              styles
             };
           });
+
+          function computedCssValue(style: CSSStyleDeclaration, property: string): string {
+            if (property === "color") {
+              const textFill = style.getPropertyValue("-webkit-text-fill-color");
+              if (textFill && !/^currentcolor$/i.test(textFill)) return textFill;
+            }
+            return style.getPropertyValue(property);
+          }
+
+          return {
+            selector: selectorArg,
+            count: elements.length,
+            elements: result
+          };
+
+          function isComparableElement(element: Element): boolean {
+            if (element.closest("[data-visual-parity-hidden='true']")) return false;
+            const style = window.getComputedStyle(element);
+            if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            return true;
+          }
+        },
+        { selector, properties, maxElements: maxElementsPerSelector }
+      );
+      snapshots.push(snapshot as StyleSelectorSnapshot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      snapshots.push({ selector, count: 0, elements: [], error: message });
+    }
+  }
+
+  return snapshots;
+}
+
+export async function enrichStyleDiffSources(
+  page: Page,
+  diffs: StyleDiff[],
+  side: "live" | "local",
+  limit = 80
+): Promise<void> {
+  const styleDiffs = diffs.filter((diff) => diff.kind === "style" && diff.property).slice(0, limit);
+  for (const diff of styleDiffs) {
+    const value = side === "live" ? diff.live : diff.local;
+    if (typeof value !== "string" || !diff.property) continue;
+    try {
+      const sources = await page.evaluate(
+        ({ selector, index, property, computedValue }) => {
+          const elements = Array.from(document.querySelectorAll(selector)).filter(isComparableElement);
+          const element = elements[index ?? 0];
+          if (!element) return [];
+          return findStyleSources(element, property, computedValue);
 
           function findStyleSources(element: Element, property: string, computedValue: string): Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }> {
             const targets = inheritedProperty(property) ? ancestorChain(element) : [element];
@@ -213,7 +263,6 @@ export async function captureStyleSnapshots(
             type: "inline" | "rule";
             href?: string;
             selectorText?: string;
-            declaredProperty?: string;
             value: string;
           }): { type: "inline" | "rule"; href?: string; selectorText?: string; value: string } {
             return {
@@ -296,14 +345,6 @@ export async function captureStyleSnapshots(
             return normalized;
           }
 
-          function computedCssValue(style: CSSStyleDeclaration, property: string): string {
-            if (property === "color") {
-              const textFill = style.getPropertyValue("-webkit-text-fill-color");
-              if (textFill && !/^currentcolor$/i.test(textFill)) return textFill;
-            }
-            return style.getPropertyValue(property);
-          }
-
           function selectorSpecificity(selector: string): [number, number, number] {
             const normalized = selector.replace(/:where\([^)]*\)/g, "");
             const ids = normalized.match(/#[\w-]+/g)?.length ?? 0;
@@ -328,12 +369,6 @@ export async function captureStyleSnapshots(
             return a[2] - b[2];
           }
 
-          return {
-            selector: selectorArg,
-            count: elements.length,
-            elements: result
-          };
-
           function isComparableElement(element: Element): boolean {
             if (element.closest("[data-visual-parity-hidden='true']")) return false;
             const style = window.getComputedStyle(element);
@@ -343,16 +378,15 @@ export async function captureStyleSnapshots(
             return true;
           }
         },
-        { selector, properties, maxElements: maxElementsPerSelector }
+        { selector: diff.selector, index: diff.index ?? 0, property: diff.property, computedValue: value }
       );
-      snapshots.push(snapshot as StyleSelectorSnapshot);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      snapshots.push({ selector, count: 0, elements: [], error: message });
+      if (side === "live") diff.liveSources = sources;
+      else diff.localSources = sources;
+    } catch {
+      if (side === "live") diff.liveSources = [];
+      else diff.localSources = [];
     }
   }
-
-  return snapshots;
 }
 
 export function diffStyleSnapshots(

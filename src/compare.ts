@@ -9,8 +9,8 @@ import { loadVisualParityConfig, mergeAcceptedDeviations } from "./config.js";
 import { DEFAULT_SELECTORS, DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
 import { applyPresets } from "./presets.js";
 import { writeInspectReport, writePageReport } from "./report.js";
-import { captureStyleSnapshots, diffStyleSnapshots } from "./styles.js";
-import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport } from "./types.js";
+import { captureStyleSnapshots, diffStyleSnapshots, enrichStyleDiffSources } from "./styles.js";
+import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport, StyleAnalysis, StyleDiff } from "./types.js";
 import { DEFAULT_OUTPUT_DIR, ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
 
 export async function comparePages(rawOptions: ComparePagesOptions): Promise<PageComparisonReport> {
@@ -70,6 +70,9 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
       const localStyles = await captureStyleSnapshots(localPage, selectors, properties, maxElements);
       const rawDiffs = diffStyleSnapshots(liveStyles, localStyles);
       const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.diffPercent);
+      const sourceDiffs = sourceDiffsForReport(diffs, analysis, options.diffLimit ?? 25);
+      await enrichStyleDiffSources(livePage, sourceDiffs, "live", sourceDiffs.length);
+      await enrichStyleDiffSources(localPage, sourceDiffs, "local", sourceDiffs.length);
       report.styles = {
         comparedSelectors: selectors.length,
         rawDiffCount: rawDiffs.length,
@@ -112,6 +115,9 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
     const local = await captureStyleSnapshots(localPage, [options.selector], properties, maxElements);
     const rawDiffs = diffStyleSnapshots(live, local);
     const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations);
+    const sourceDiffs = sourceDiffsForReport(diffs, analysis, options.diffLimit ?? 25);
+    await enrichStyleDiffSources(livePage, sourceDiffs, "live", sourceDiffs.length);
+    await enrichStyleDiffSources(localPage, sourceDiffs, "local", sourceDiffs.length);
 
     let liveCrop: string | undefined;
     let localCrop: string | undefined;
@@ -151,6 +157,15 @@ export async function inspectSelector(rawOptions: InspectSelectorOptions): Promi
   } finally {
     await browser.close();
   }
+}
+
+function sourceDiffsForReport(diffs: StyleDiff[], analysis: StyleAnalysis, limit: number): StyleDiff[] {
+  const selected = new Set<StyleDiff>();
+  for (const cluster of analysis.clusters.slice(0, Math.max(10, limit))) {
+    for (const example of cluster.examples.slice(0, 2)) selected.add(example);
+  }
+  for (const diff of diffs.slice(0, limit)) selected.add(diff);
+  return Array.from(selected).filter((diff) => diff.kind === "style" && diff.property).slice(0, Math.max(40, limit * 2));
 }
 
 export async function diffScreenshots(
