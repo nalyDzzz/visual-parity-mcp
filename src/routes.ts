@@ -3,10 +3,10 @@ import path from "node:path";
 import { comparePages } from "./compare.js";
 import { writeRoutesSummary } from "./report.js";
 import type { CompareRoutesOptions, RoutesComparisonReport } from "./types.js";
-import { ensureDir, joinUrl, resolveOutputDir, slugify } from "./utils.js";
+import { DEFAULT_OUTPUT_DIR, ensureDir, joinUrl, resolveOutputDir, slugify } from "./utils.js";
 
 export async function compareRoutes(options: CompareRoutesOptions): Promise<RoutesComparisonReport> {
-  const outputDir = resolveOutputDir(options.outputDir ?? "reports/visual-parity");
+  const outputDir = resolveOutputDir(options.outputDir ?? DEFAULT_OUTPUT_DIR);
   await ensureDir(outputDir);
 
   const results = [];

@@ -9,14 +9,14 @@ import { applyPresets } from "./presets.js";
 import { writeInspectReport, writePageReport } from "./report.js";
 import { captureStyleSnapshots, diffStyleSnapshots } from "./styles.js";
 import type { ComparePagesOptions, InspectSelectorOptions, InspectSelectorReport, PageComparisonReport } from "./types.js";
-import { ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
+import { DEFAULT_OUTPUT_DIR, ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
 
 export async function comparePages(rawOptions: ComparePagesOptions): Promise<PageComparisonReport> {
   const options = applyPresets(rawOptions);
   const viewport = normalizeViewport(options.viewport);
   const threshold = options.threshold ?? 0.1;
   const maxDiffPercent = options.maxDiffPercent ?? 1;
-  const outputDir = options.outputDir ?? "reports/visual-parity";
+  const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
   const runDir = makeRunDir(outputDir, options.name, `${slugify(options.localUrl)}-${Date.now()}`);
   await ensureDir(runDir);
 
@@ -80,7 +80,7 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
 export async function inspectSelector(rawOptions: InspectSelectorOptions): Promise<InspectSelectorReport> {
   const options = applyPresets(rawOptions);
   const viewport = normalizeViewport(options.viewport);
-  const outputDir = options.outputDir ?? "reports/visual-parity";
+  const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
   const runDir = makeRunDir(outputDir, options.name, `inspect-${slugify(options.selector)}-${Date.now()}`);
   await ensureDir(runDir);
 

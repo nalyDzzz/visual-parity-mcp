@@ -4,7 +4,7 @@ import { comparePages, inspectSelector } from "./compare.js";
 import { formatDiff } from "./report.js";
 import { compareRoutes, readPathsFile } from "./routes.js";
 import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, WaitUntil } from "./types.js";
-import { toNumber, uniqueNonEmpty } from "./utils.js";
+import { DEFAULT_OUTPUT_DIR, toNumber, uniqueNonEmpty } from "./utils.js";
 
 const program = new Command();
 
@@ -20,7 +20,7 @@ program
   .option("--candidate <url>", "Candidate/target URL")
   .option("--live <url>", "Alias for --reference")
   .option("--local <url>", "Alias for --candidate")
-  .option("--out <dir>", "Output directory", "reports/visual-parity")
+  .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--name <slug>", "Run name")
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
@@ -58,7 +58,7 @@ program
   .option("--local-base <url>", "Alias for --candidate-base")
   .option("--path <path>", "Route path to compare", collect, [])
   .option("--paths-file <file>", "Newline-separated route paths")
-  .option("--out <dir>", "Output directory", "reports/visual-parity")
+  .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")
   .option("--dpr <number>", "Device scale factor", "1")
@@ -106,7 +106,7 @@ program
   .option("--live <url>", "Alias for --reference")
   .option("--local <url>", "Alias for --candidate")
   .requiredOption("--selector <css>", "CSS selector to inspect")
-  .option("--out <dir>", "Output directory", "reports/visual-parity")
+  .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--name <slug>", "Run name")
   .option("--width <px>", "Viewport width", "1440")
   .option("--height <px>", "Viewport height", "1200")

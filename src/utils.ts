@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+export const DEFAULT_OUTPUT_DIR = ".visual-parity/reports";
+
 export async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
@@ -19,7 +21,7 @@ export function timestampSlug(date = new Date()): string {
   return date.toISOString().replace(/[:.]/g, "-");
 }
 
-export function resolveOutputDir(outputDir = "reports/visual-parity"): string {
+export function resolveOutputDir(outputDir = DEFAULT_OUTPUT_DIR): string {
   return path.resolve(process.cwd(), outputDir);
 }
 

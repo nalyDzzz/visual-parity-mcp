@@ -92,7 +92,7 @@ Compare one reference URL against one candidate URL.
 {
   "referenceUrl": "https://example.com/about",
   "candidateUrl": "http://localhost:3000/about",
-  "outputDir": "reports/visual-parity",
+  "outputDir": ".visual-parity/reports",
   "name": "about",
   "viewport": {
     "width": 1440,
@@ -195,7 +195,7 @@ visual-parity inspect \
 --candidate <url>           Candidate/target URL
 --live <url>                Legacy alias for --reference
 --local <url>               Legacy alias for --candidate
---out <dir>                 Output directory, default reports/visual-parity
+--out <dir>                 Output directory, default .visual-parity/reports
 --name <slug>               Run name
 --width <px>                Viewport width, default 1440
 --height <px>               Viewport height, default 1200
@@ -255,6 +255,8 @@ The JSON report includes:
 - computed-style, layout, and text diffs for selected elements
 
 Artifact names still use `live` and `local` for backward compatibility.
+
+By default, reports are written under `.visual-parity/reports` in the current working directory. Use `--out` or `outputDir` to put them somewhere else.
 
 ## HubSpot Preset
 

@@ -31,7 +31,7 @@ const child = spawn(
     "--candidate",
     `http://127.0.0.1:${port}/local/index.html`,
     "--out",
-    "reports/smoke",
+    ".visual-parity/reports/smoke",
     "--name",
     "fixture",
     "--selector",
