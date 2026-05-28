@@ -34,6 +34,7 @@
     "inspect": "tsx src/cli.ts inspect",
     "check": "npm run build && node dist/cli.js --help",
     "smoke": "node scripts/smoke-test.mjs",
+    "perf:smoke": "node scripts/perf-smoke-test.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
