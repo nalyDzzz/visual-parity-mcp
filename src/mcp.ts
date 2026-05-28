@@ -213,6 +213,12 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
     screenshots: report.screenshots,
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
+    health: report.health
+      ? {
+          live: { status: report.health.live.status, hiddenElementCount: report.health.live.hiddenElementCount, warnings: report.health.live.warnings },
+          local: { status: report.health.local.status, hiddenElementCount: report.health.local.hiddenElementCount, warnings: report.health.local.warnings }
+        }
+      : undefined,
     styleDiffCount: report.styles?.diffCount ?? 0,
     rawStyleDiffCount: report.styles?.rawDiffCount ?? report.styles?.diffCount ?? 0,
     topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], limit).map((cluster) => ({

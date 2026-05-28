@@ -34,10 +34,10 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
     const livePage = await context.newPage();
     const localPage = await context.newPage();
 
-    await preparePage(livePage, options.liveUrl, options);
+    const liveHealth = await preparePage(livePage, options.liveUrl, options);
     await screenshotPage(livePage, liveScreenshot, { fullPage: options.fullPage });
 
-    await preparePage(localPage, options.localUrl, options);
+    const localHealth = await preparePage(localPage, options.localUrl, options);
     await screenshotPage(localPage, localScreenshot, { fullPage: options.fullPage });
 
     const visual = await diffScreenshots(liveScreenshot, localScreenshot, diffScreenshot, threshold, maxDiffPercent);
@@ -54,6 +54,10 @@ export async function comparePages(rawOptions: ComparePagesOptions): Promise<Pag
         diff: diffScreenshot
       },
       visual,
+      health: {
+        live: liveHealth,
+        local: localHealth
+      },
       reportJson: path.join(runDir, "report.json"),
       reportHtml: path.join(runDir, "report.html")
     };

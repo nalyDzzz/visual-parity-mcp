@@ -6,6 +6,21 @@ export interface ViewportOptions {
   deviceScaleFactor?: number;
 }
 
+export interface PageHealth {
+  url: string;
+  status?: number;
+  ok: boolean;
+  title: string;
+  bodyTextLength: number;
+  bodyChildCount: number;
+  landmarkCount: number;
+  imageCount: number;
+  decodedImageCount: number;
+  hiddenElementCount: number;
+  errors: string[];
+  warnings: string[];
+}
+
 export interface ComparePagesOptions {
   liveUrl: string;
   localUrl: string;
@@ -173,6 +188,10 @@ export interface PageComparisonReport {
     threshold: number;
     maxDiffPercent: number;
     passed: boolean;
+  };
+  health?: {
+    live: PageHealth;
+    local: PageHealth;
   };
   styles?: {
     comparedSelectors: number;

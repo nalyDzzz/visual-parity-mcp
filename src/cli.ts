@@ -235,6 +235,12 @@ function compactPageSummary(report: PageComparisonReport) {
     screenshots: report.screenshots,
     reportJson: report.reportJson,
     reportHtml: report.reportHtml,
+    health: report.health
+      ? {
+          live: { status: report.health.live.status, hiddenElementCount: report.health.live.hiddenElementCount, warnings: report.health.live.warnings },
+          local: { status: report.health.local.status, hiddenElementCount: report.health.local.hiddenElementCount, warnings: report.health.local.warnings }
+        }
+      : undefined,
     topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? [],
     topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], 10).map(formatCluster),
     remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], 10)

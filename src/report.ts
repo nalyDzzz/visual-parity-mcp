@@ -50,6 +50,7 @@ function renderPageReport(report: PageComparisonReport): string {
         <div><dt>Max</dt><dd>${report.visual.maxDiffPercent.toFixed(3)}%</dd></div>
         <div><dt>Pixels</dt><dd>${report.visual.mismatchedPixels.toLocaleString()} / ${report.visual.totalPixels.toLocaleString()}</dd></div>
         <div><dt>Viewport</dt><dd>${report.viewport.width}×${report.viewport.height}@${report.viewport.deviceScaleFactor ?? 1}</dd></div>
+        ${report.health ? `<div><dt>Hidden</dt><dd>${(report.health.live.hiddenElementCount + report.health.local.hiddenElementCount).toLocaleString()}</dd></div>` : ""}
       </dl>
     </section>
     <section>

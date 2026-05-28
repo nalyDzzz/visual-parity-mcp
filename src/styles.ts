@@ -14,7 +14,7 @@ export async function captureStyleSnapshots(
     try {
       const snapshot = await page.evaluate(
         ({ selector: selectorArg, properties: props, maxElements }) => {
-          const elements = Array.from(document.querySelectorAll(selectorArg));
+          const elements = Array.from(document.querySelectorAll(selectorArg)).filter(isComparableElement);
           const capped = elements.slice(0, maxElements);
           const result = capped.map((element, index) => {
             const style = window.getComputedStyle(element);
@@ -22,7 +22,7 @@ export async function captureStyleSnapshots(
             const styles: Record<string, string> = {};
             const styleSources: Record<string, Array<{ type: "inline" | "rule"; href?: string; selectorText?: string; value: string }>> = {};
             for (const prop of props) {
-              styles[prop] = style.getPropertyValue(prop);
+              styles[prop] = computedCssValue(style, prop);
               styleSources[prop] = findStyleSources(element, prop, styles[prop]);
             }
             return {
@@ -151,6 +151,7 @@ export async function captureStyleSnapshots(
 
           function sourceProperties(property: string): string[] {
             const properties = [property];
+            if (property === "color") properties.unshift("-webkit-text-fill-color");
             if (property.startsWith("padding-")) properties.push("padding");
             if (property.startsWith("margin-")) properties.push("margin");
             if (property.startsWith("border-") && property.endsWith("-color")) properties.push("border-color", "border");
@@ -262,7 +263,8 @@ export async function captureStyleSnapshots(
             declaredProperty: string,
             declaredValue: string
           ): boolean {
-            const resolved = resolveDeclaredValue(target, computedProperty, declaredProperty, declaredValue);
+            const resolvedProperty = computedProperty === "color" && declaredProperty === "-webkit-text-fill-color" ? "-webkit-text-fill-color" : computedProperty;
+            const resolved = resolveDeclaredValue(target, resolvedProperty, declaredProperty, declaredValue);
             return normalizeBrowserValue(resolved, computedProperty) === normalizeBrowserValue(computedValue, computedProperty);
           }
 
@@ -294,6 +296,14 @@ export async function captureStyleSnapshots(
             return normalized;
           }
 
+          function computedCssValue(style: CSSStyleDeclaration, property: string): string {
+            if (property === "color") {
+              const textFill = style.getPropertyValue("-webkit-text-fill-color");
+              if (textFill && !/^currentcolor$/i.test(textFill)) return textFill;
+            }
+            return style.getPropertyValue(property);
+          }
+
           function selectorSpecificity(selector: string): [number, number, number] {
             const normalized = selector.replace(/:where\([^)]*\)/g, "");
             const ids = normalized.match(/#[\w-]+/g)?.length ?? 0;
@@ -323,6 +333,15 @@ export async function captureStyleSnapshots(
             count: elements.length,
             elements: result
           };
+
+          function isComparableElement(element: Element): boolean {
+            if (element.closest("[data-visual-parity-hidden='true']")) return false;
+            const style = window.getComputedStyle(element);
+            if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            return true;
+          }
         },
         { selector, properties, maxElements: maxElementsPerSelector }
       );

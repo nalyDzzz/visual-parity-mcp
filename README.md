@@ -14,6 +14,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Basic stylesheet provenance for matched computed-style rules
 - Root-cause clustering for repeated style/layout diffs
 - Cross-page aggregation for route comparisons
+- Broken-page detection for HTTP errors, empty bodies, and missing landmarks
 - Per-project accepted deviations through `.visual-parity.json`
 - HTML and JSON reports
 - Noisy-element masking with custom selectors
@@ -237,6 +238,8 @@ Style/layout diffs are analyzed before reports are written:
 - common fixes are synthesized for high-signal clusters such as missing `box-sizing: border-box`
 - same-origin stylesheets and inline styles are reported as provenance using a cascade-aware rule winner when the browser can read matching CSS rules
 - root-cause displays prioritize repeated findings and summarize hidden one-off tail findings
+- hidden preset elements are excluded from style snapshots as well as screenshots
+- `color` comparison uses effective text fill when pages rely on `-webkit-text-fill-color`
 
 Instead of reading dozens of repeated entries, the report can now show a single finding such as:
 
@@ -286,6 +289,8 @@ For local development servers such as `next dev` or Vite dev mode, use:
 ```
 
 Persistent HMR websocket connections can keep dev pages from ever reaching `networkidle`, which causes navigation timeouts. `domcontentloaded` is usually the right option for local iteration. Production and preview URLs often work well with the default `networkidle`.
+
+Before every screenshot, the browser pass now freezes animations/transitions, waits for fonts and decodable images, scrolls back to the top, closes open `details`/`dialog` elements, and waits for an idle frame. The run hard-fails before writing a misleading comparison if either page returns HTTP 4xx/5xx, has an empty body, or exposes no landmark/content selectors.
 
 Accepted values:
 
