@@ -45,7 +45,6 @@ export const VISUAL_PARITY_PRESETS: Record<string, VisualParityPreset> = {
       ".cky-btn-reject",
       ".cky-btn-accept",
       "[class^='cky-' i]",
-      "[class*='cky-' i]",
       "[class*=' cky-' i]",
       "[id^='cky-' i]",
       "iframe[src*='hubspot']",

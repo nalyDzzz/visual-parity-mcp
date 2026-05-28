@@ -137,29 +137,41 @@ async function stabilizeDom(page: Page): Promise<void> {
 async function waitForStablePage(page: Page): Promise<void> {
   await page.evaluate(async () => {
     window.scrollTo(0, 0);
-    if ("fonts" in document) {
-      try {
-        await document.fonts.ready;
-      } catch {
-        // Ignore font readiness failures from cross-origin or aborted faces.
-      }
-    }
-    const images = Array.from(document.images).filter((image) => image.complete === false);
-    await Promise.all(
-      images.map((image) =>
-        image.decode().catch(() => {
-          // Broken images are captured in page health; they should not block stabilization.
+    const timeout = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
+      Promise.race([
+        promise,
+        new Promise<undefined>((resolve) => {
+          setTimeout(() => resolve(undefined), ms);
         })
-      )
+      ]);
+
+    if ("fonts" in document) {
+      await timeout(document.fonts.ready.catch(() => undefined), 750);
+    }
+    const images = Array.from(document.images)
+      .filter((image) => image.complete === false)
+      .slice(0, 50);
+    await timeout(
+      Promise.all(
+        images.map((image) =>
+          image.decode().catch(() => {
+            // Broken images are captured in page health; they should not block stabilization.
+          })
+        )
+      ),
+      1_000
     );
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    await new Promise<void>((resolve) => {
-      if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(() => resolve(), { timeout: 500 });
-      } else {
-        setTimeout(resolve, 100);
-      }
-    });
+    await timeout(
+      new Promise<void>((resolve) => {
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(() => resolve(), { timeout: 500 });
+        } else {
+          setTimeout(resolve, 100);
+        }
+      }),
+      600
+    );
     window.scrollTo(0, 0);
   });
 }
