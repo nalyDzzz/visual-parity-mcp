@@ -3,7 +3,21 @@ import { Command } from "commander";
 import { comparePages, inspectSelector } from "./compare.js";
 import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes, readPathsFile } from "./routes.js";
-import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, WaitUntil } from "./types.js";
+import { compareSection, compareSections, discoverSections } from "./sections.js";
+import type {
+  ComparePagesOptions,
+  CompareRoutesOptions,
+  CompareSectionOptions,
+  CompareSectionsOptions,
+  CompareSectionsReport,
+  DiscoverSectionsOptions,
+  DiscoverSectionsReport,
+  InspectSelectorOptions,
+  PageComparisonReport,
+  RoutesComparisonReport,
+  SectionComparisonReport,
+  WaitUntil
+} from "./types.js";
 import { DEFAULT_OUTPUT_DIR, toNumber, uniqueNonEmpty } from "./utils.js";
 import { VERSION } from "./version.js";
 
@@ -180,6 +194,113 @@ program
     });
   });
 
+program
+  .command("discover-sections")
+  .description("Discover likely sections and candidate matches for section-by-section parity work")
+  .option("--reference <url>", "Reference/source URL")
+  .option("--candidate <url>", "Candidate/target URL")
+  .option("--live <url>", "Alias for --reference")
+  .option("--local <url>", "Alias for --candidate")
+  .option("--out <dir>", "Output directory for optional crops", DEFAULT_OUTPUT_DIR)
+  .option("--name <slug>", "Run name")
+  .option("--width <px>", "Viewport width", "1440")
+  .option("--height <px>", "Viewport height", "1200")
+  .option("--dpr <number>", "Device scale factor", "1")
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
+  .option("--wait-ms <ms>", "Extra wait after page load", "1000")
+  .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
+  .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
+  .option("--max-sections <count>", "Maximum sections to discover", "12")
+  .option("--include-crops", "Capture reference/candidate crop images for discovered sections", false)
+  .option("--json", "Print compact JSON only", false)
+  .action(async (opts) => {
+    await runCommand(async () => {
+      const report = await discoverSections(makeDiscoverSectionsOptions(opts));
+      console.log(opts.json ? JSON.stringify(compactDiscoverSectionsSummary(report), null, 2) : humanDiscoverSectionsSummary(report));
+    });
+  });
+
+program
+  .command("section")
+  .description("Compare one reference section against one candidate section")
+  .option("--reference <url>", "Reference/source URL")
+  .option("--candidate <url>", "Candidate/target URL")
+  .option("--live <url>", "Alias for --reference")
+  .option("--local <url>", "Alias for --candidate")
+  .requiredOption("--reference-selector <css>", "Reference section selector")
+  .option("--candidate-selector <css>", "Candidate section selector, defaults to --reference-selector")
+  .option("--local-selector <css>", "Alias for --candidate-selector")
+  .option("--section-label <label>", "Human-readable section label")
+  .option("--section-selector <css>", "Selector to inspect inside the section; repeatable", collect, [])
+  .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+  .option("--name <slug>", "Run name")
+  .option("--config <file>", "Visual parity config file, default .visual-parity.json")
+  .option("--width <px>", "Viewport width", "1440")
+  .option("--height <px>", "Viewport height", "1200")
+  .option("--dpr <number>", "Device scale factor", "1")
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
+  .option("--wait-ms <ms>", "Extra wait after page load", "1000")
+  .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
+  .option("--threshold <number>", "pixelmatch threshold", "0.1")
+  .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
+  .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
+  .option("--json", "Print compact JSON only", false)
+  .action(async (opts) => {
+    await runCommand(async () => {
+      const report = await compareSection(makeCompareSectionOptions(opts));
+      console.log(opts.json ? JSON.stringify(compactSectionSummary(report), null, 2) : humanSectionSummary(report));
+      if (!report.visual.passed) process.exitCode = 2;
+    });
+  });
+
+program
+  .command("sections")
+  .description("Discover and compare page sections as a parity checklist")
+  .option("--reference <url>", "Reference/source URL")
+  .option("--candidate <url>", "Candidate/target URL")
+  .option("--live <url>", "Alias for --reference")
+  .option("--local <url>", "Alias for --candidate")
+  .option("--section-selector <css>", "Selector to inspect inside each section; repeatable", collect, [])
+  .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
+  .option("--name <slug>", "Run name")
+  .option("--config <file>", "Visual parity config file, default .visual-parity.json")
+  .option("--width <px>", "Viewport width", "1440")
+  .option("--height <px>", "Viewport height", "1200")
+  .option("--dpr <number>", "Device scale factor", "1")
+  .option("--wait-until <state>", "Navigation readiness state: commit, domcontentloaded, load, networkidle", "networkidle")
+  .option("--wait-ms <ms>", "Extra wait after page load", "1000")
+  .option("--timeout-ms <ms>", "Navigation timeout", "30000")
+  .option("--load-retries <count>", "Retry count for blocked or transiently empty page loads", "1")
+  .option("--retry-delay-ms <ms>", "Delay between page load retries", "1000")
+  .option("--user-agent <value>", "Override browser user agent")
+  .option("--persistent-context-dir <dir>", "Reuse cookies/storage from a persistent Playwright profile directory")
+  .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
+  .option("--threshold <number>", "pixelmatch threshold", "0.1")
+  .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
+  .option("--hide <css>", "Selector to hide before screenshot", collect, [])
+  .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
+  .option("--max-sections <count>", "Maximum sections to compare", "12")
+  .option("--json", "Print compact JSON only", false)
+  .action(async (opts) => {
+    await runCommand(async () => {
+      const report = await compareSections(makeCompareSectionsOptions(opts));
+      console.log(opts.json ? JSON.stringify(report, null, 2) : humanSectionsSummary(report));
+      if (report.failed > 0) process.exitCode = 2;
+    });
+  });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
@@ -191,19 +312,15 @@ function collect(value: string, previous: string[]): string[] {
   return previous;
 }
 
-function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
+function makeBrowserOptions(opts: Record<string, any>) {
   return {
-    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
-    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
     outputDir: opts.out,
     name: opts.name,
-    configPath: opts.config,
     viewport: {
       width: toNumber(opts.width, 1440),
       height: toNumber(opts.height, 1200),
       deviceScaleFactor: toNumber(opts.dpr, 1)
     },
-    fullPage: Boolean(opts.fullPage),
     waitUntil: parseWaitUntil(opts.waitUntil),
     waitMs: toNumber(opts.waitMs, 1000),
     timeoutMs: toNumber(opts.timeoutMs, 30000),
@@ -212,13 +329,62 @@ function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
     userAgent: stringOption(opts.userAgent),
     persistentContextDir: stringOption(opts.persistentContextDir),
     softPageHealth: Boolean(opts.softPageHealth),
+    hideSelectors: uniqueNonEmpty(opts.hide),
+    presets: uniqueNonEmpty(opts.preset)
+  };
+}
+
+function makeCompareOptions(opts: Record<string, any>): ComparePagesOptions {
+  return {
+    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
+    ...makeBrowserOptions(opts),
+    configPath: opts.config,
+    fullPage: Boolean(opts.fullPage),
     threshold: toNumber(opts.threshold, 0.1),
     maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
     selectors: uniqueNonEmpty(opts.selector),
-    hideSelectors: uniqueNonEmpty(opts.hide),
-    presets: uniqueNonEmpty(opts.preset),
     scrollPositions: parseNumberList(opts.scrollPosition),
     compareStyles: opts.styles !== false
+  };
+}
+
+function makeDiscoverSectionsOptions(opts: Record<string, any>): DiscoverSectionsOptions {
+  return {
+    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
+    ...makeBrowserOptions(opts),
+    maxSections: Math.max(1, Math.floor(toNumber(opts.maxSections, 12))),
+    includeCrops: Boolean(opts.includeCrops)
+  };
+}
+
+function makeCompareSectionOptions(opts: Record<string, any>): CompareSectionOptions {
+  const candidateSelector = stringOption(opts.candidateSelector) ?? stringOption(opts.localSelector);
+  return {
+    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
+    ...makeBrowserOptions(opts),
+    configPath: opts.config,
+    threshold: toNumber(opts.threshold, 0.1),
+    maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
+    referenceSelector: opts.referenceSelector,
+    localSelector: candidateSelector,
+    sectionLabel: stringOption(opts.sectionLabel),
+    sectionSelectors: uniqueNonEmpty(opts.sectionSelector)
+  };
+}
+
+function makeCompareSectionsOptions(opts: Record<string, any>): CompareSectionsOptions {
+  return {
+    liveUrl: resolveUrlOption(opts.reference, opts.live, "--reference", "--live"),
+    localUrl: resolveUrlOption(opts.candidate, opts.local, "--candidate", "--local"),
+    ...makeBrowserOptions(opts),
+    configPath: opts.config,
+    threshold: toNumber(opts.threshold, 0.1),
+    maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
+    maxSections: Math.max(1, Math.floor(toNumber(opts.maxSections, 12))),
+    sectionSelectors: uniqueNonEmpty(opts.sectionSelector)
   };
 }
 
@@ -317,6 +483,42 @@ function compactRoutesSummary(report: RoutesComparisonReport) {
   };
 }
 
+function compactDiscoverSectionsSummary(report: DiscoverSectionsReport) {
+  return {
+    liveUrl: report.liveUrl,
+    localUrl: report.localUrl,
+    runDir: report.runDir,
+    sections: report.sections.map((section) => ({
+      label: section.label,
+      referenceSelector: section.reference.selector,
+      candidateSelector: section.candidate?.selector,
+      matchConfidence: section.matchConfidence,
+      referenceRect: section.reference.rect,
+      candidateRect: section.candidate?.rect,
+      textSample: section.reference.text.slice(0, 160),
+      screenshots: section.screenshots
+    }))
+  };
+}
+
+function compactSectionSummary(report: SectionComparisonReport) {
+  return {
+    passed: report.visual.passed,
+    label: report.section.label,
+    referenceSelector: report.section.referenceSelector,
+    candidateSelector: report.section.candidateSelector,
+    diffPercent: report.visual.diffPercent,
+    effectiveDiffPercent: report.visual.effectiveDiffPercent,
+    maxDiffPercent: report.visual.maxDiffPercent,
+    screenshots: report.screenshots,
+    reportJson: report.reportJson,
+    styleDiffCount: report.styles.diffCount,
+    topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], 10).map(formatCluster),
+    fixPlan: report.styles.analysis?.fixPlan,
+    topDiffs: report.styles.diffs.slice(0, 25).map(formatDiff)
+  };
+}
+
 function printPageReport(report: PageComparisonReport): void {
   console.log(`Visual parity: ${report.visual.passed ? "PASS" : "FAIL"}`);
   console.log(`Reference: ${report.liveUrl}`);
@@ -394,6 +596,78 @@ function humanInspectSummary(summary: { selector: string; diffCount: number; rep
   } else if (summary.topDiffs.length > 0) {
     lines.push("Top diffs:");
     for (const diff of summary.topDiffs.slice(0, 10)) lines.push(`  ${diff}`);
+  }
+  return lines.join("\n");
+}
+
+function humanDiscoverSectionsSummary(report: DiscoverSectionsReport): string {
+  const lines = [
+    "Discovered sections:",
+    `Reference: ${report.liveUrl}`,
+    `Candidate: ${report.localUrl}`
+  ];
+  if (report.runDir) lines.push(`Crops: ${report.runDir}`);
+  for (const [index, section] of report.sections.entries()) {
+    lines.push(
+      `  ${index + 1}. ${section.label}`,
+      `     reference: ${section.reference.selector}`,
+      `     candidate: ${section.candidate?.selector ?? "<no match>"} (${Math.round(section.matchConfidence * 100)}%)`
+    );
+    if (section.screenshots?.reference || section.screenshots?.candidate) {
+      lines.push(`     crops: ${section.screenshots.reference ?? "<none>"} | ${section.screenshots.candidate ?? "<none>"}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function humanSectionSummary(report: SectionComparisonReport): string {
+  const lines = [
+    `Section parity: ${report.visual.passed ? "PASS" : "FAIL"}`,
+    `Section: ${report.section.label}`,
+    `Reference selector: ${report.section.referenceSelector}`,
+    `Candidate selector: ${report.section.candidateSelector}`,
+    `Diff: ${report.visual.diffPercent.toFixed(3)}% (effective ${report.visual.effectiveDiffPercent.toFixed(3)}%, max ${report.visual.maxDiffPercent.toFixed(3)}%)`,
+    "Artifacts:",
+    `  json: ${report.reportJson}`,
+    `  reference: ${report.screenshots.reference}`,
+    `  candidate: ${report.screenshots.candidate}`,
+    `  diff: ${report.screenshots.diff}`
+  ];
+  const clusters = prioritizedRootCauses(report.styles.analysis?.clusters ?? [], 8);
+  if (clusters.length > 0) {
+    lines.push("Top root causes:");
+    for (const cluster of clusters) {
+      lines.push(`  ${formatCluster(cluster)} (${cluster.severity}, ${cluster.fixability ?? "unknown"}, ${cluster.count} diffs)`);
+      if (cluster.suggestedFix) lines.push(`    fix: ${cluster.suggestedFix}`);
+    }
+  }
+  const plan = report.styles.analysis?.fixPlan;
+  const firstAction = plan && [...plan.globalCssFixes, ...plan.componentStyleFixes, ...plan.contentMismatches, ...plan.needsReview][0];
+  if (firstAction) {
+    lines.push("Recommended next action:", `  ${firstAction.suggestedFix ?? firstAction.reason}`);
+  }
+  return lines.join("\n");
+}
+
+function humanSectionsSummary(report: CompareSectionsReport): string {
+  const lines = [
+    `Section checklist: ${report.failed === 0 ? "PASS" : "FAIL"}`,
+    `Reference: ${report.liveUrl}`,
+    `Candidate: ${report.localUrl}`,
+    `Sections: ${report.total} total, ${report.passed} passed, ${report.failed} failed`,
+    `Summary: ${report.summaryJson}`
+  ];
+  if (report.recommendedOrder.length > 0) {
+    lines.push(`Recommended order: ${report.recommendedOrder.join(" -> ")}`);
+  }
+  for (const section of report.sections) {
+    lines.push(
+      `  ${section.passed ? "PASS" : "FAIL"} ${section.label} ${section.effectiveDiffPercent.toFixed(3)}%`,
+      `    reference: ${section.referenceSelector}`,
+      `    candidate: ${section.candidateSelector ?? "<no match>"}`
+    );
+    if (section.diffImage) lines.push(`    diff: ${section.diffImage}`);
+    lines.push(`    next: ${section.nextAction}`);
   }
   return lines.join("\n");
 }

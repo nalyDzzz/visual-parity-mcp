@@ -263,6 +263,39 @@ visual-parity inspect \
   --wait-until domcontentloaded
 ```
 
+### Discover Sections
+
+```bash
+visual-parity discover-sections \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about \
+  --wait-until domcontentloaded \
+  --max-sections 8 \
+  --include-crops
+```
+
+### Compare One Section
+
+```bash
+visual-parity section \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about \
+  --reference-selector "main > section:nth-of-type(1)" \
+  --candidate-selector "main > section:nth-of-type(1)" \
+  --section-label Hero \
+  --wait-until domcontentloaded
+```
+
+### Compare Sections Checklist
+
+```bash
+visual-parity sections \
+  --reference https://example.com/about \
+  --candidate http://localhost:3000/about \
+  --wait-until domcontentloaded \
+  --max-sections 8
+```
+
 ## Common Options
 
 ```text
@@ -288,6 +321,7 @@ visual-parity inspect \
 --threshold <number>        pixelmatch threshold, default 0.1
 --max-diff-percent <num>    Failure threshold, default 1.0
 --selector <css>            Repeatable selector for style/layout extraction
+--section-selector <css>    Repeatable scoped selector for section style/layout extraction
 --hide <css>                Repeatable selector to hide before screenshot
 --config <file>             Config file, default .visual-parity.json
 --preset <name>             Repeatable preset bundle; currently: hubspot, nextjs-fonts, dev-toolbars
@@ -443,10 +477,10 @@ You can add more masks with `--hide` or `hideSelectors`.
 
 For agent-led section repair, use:
 
-1. Run `discover_sections`.
-2. Run `compare_sections` to get a section checklist and recommended order.
+1. Run `discover_sections` through MCP or `visual-parity discover-sections`.
+2. Run `compare_sections` through MCP or `visual-parity sections` to get a section checklist and recommended order.
 3. Fix the first failing section.
-4. Re-run `compare_section` for that section.
+4. Re-run `compare_section` through MCP or `visual-parity section` for that section.
 5. Move to the next failing section until the checklist passes or remaining differences are accepted.
 
 For Next.js local development, include `waitUntil: "domcontentloaded"` in MCP calls or `--wait-until domcontentloaded` in CLI calls.
@@ -473,6 +507,7 @@ Useful local commands:
 npm run compare -- --help
 npm run routes -- --help
 npm run inspect -- --help
+node dist/cli.js sections --help
 npm run dev:mcp
 ```
 
