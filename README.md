@@ -140,6 +140,7 @@ Compare multiple paths under a reference and candidate base URL.
   "referenceBaseUrl": "https://example.com",
   "candidateBaseUrl": "http://localhost:3000",
   "paths": ["/", "/about", "/pricing"],
+  "concurrency": 2,
   "waitUntil": "domcontentloaded",
   "presets": ["hubspot", "nextjs-fonts"]
 }
@@ -189,9 +190,10 @@ visual-parity compare \
 
 ```bash
 visual-parity routes \
-  --reference-base https://example.com \
+--reference-base https://example.com \
   --candidate-base http://localhost:3000 \
   --wait-until domcontentloaded \
+  --concurrency 2 \
   --path / \
   --path /about \
   --path /pricing
@@ -225,6 +227,7 @@ visual-parity inspect \
 --timeout-ms <ms>           Navigation timeout, default 30000
 --load-retries <count>      Retry count for blocked or transiently empty page loads, default 1
 --retry-delay-ms <ms>       Delay between page load retries, default 1000
+--concurrency <count>       Route comparisons to run at once for routes command, default 1
 --user-agent <value>        Override browser user agent
 --persistent-context-dir <dir> Reuse cookies/storage from a persistent Playwright profile directory
 --soft-page-health          Warn instead of failing on broken-page health checks
@@ -254,6 +257,7 @@ Style/layout diffs are analyzed before reports are written:
 - root-cause displays prioritize repeated findings and summarize hidden one-off tail findings
 - hidden preset elements are excluded from style snapshots as well as screenshots
 - `color` comparison uses effective text fill when pages rely on `-webkit-text-fill-color`
+- reports and MCP responses include a recommended fix plan grouped into global CSS, component styles, content/DOM mismatches, probable noise, and manual review
 
 Instead of reading dozens of repeated entries, the report can now show a single finding such as:
 

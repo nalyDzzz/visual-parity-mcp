@@ -62,6 +62,7 @@ export interface CompareRoutesOptions extends Omit<ComparePagesOptions, "liveUrl
   liveBaseUrl: string;
   localBaseUrl: string;
   paths: string[];
+  concurrency?: number;
 }
 
 export interface InspectSelectorOptions {
@@ -161,11 +162,29 @@ export interface StyleDiffCluster {
   };
 }
 
+export interface StyleFixPlanItem {
+  title: string;
+  reason: string;
+  clusterId: string;
+  selectors: string[];
+  suggestedFix?: string;
+  examples: StyleDiff[];
+}
+
+export interface StyleFixPlan {
+  globalCssFixes: StyleFixPlanItem[];
+  componentStyleFixes: StyleFixPlanItem[];
+  contentMismatches: StyleFixPlanItem[];
+  probableNoise: StyleFixPlanItem[];
+  needsReview: StyleFixPlanItem[];
+}
+
 export interface StyleAnalysis {
   rawDiffCount: number;
   ignoredDiffCount: number;
   diffCount: number;
   clusters: StyleDiffCluster[];
+  fixPlan: StyleFixPlan;
 }
 
 export interface CrossPageFinding {

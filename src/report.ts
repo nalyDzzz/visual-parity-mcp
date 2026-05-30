@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CrossPageFinding, InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, StyleDiff, StyleDiffCluster, StyleRuleSource } from "./types.js";
+import type { CrossPageFinding, InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, StyleDiff, StyleDiffCluster, StyleFixPlan, StyleRuleSource } from "./types.js";
 import { ensureDir, escapeHtml, relativeForHtml } from "./utils.js";
 
 export async function writePageReport(report: PageComparisonReport): Promise<PageComparisonReport> {
@@ -69,6 +69,10 @@ function renderPageReport(report: PageComparisonReport): string {
       ${clusterList(report.styles?.analysis?.clusters ?? [], 20)}
     </section>
     <section>
+      <h2>Recommended fix plan</h2>
+      ${fixPlanSection(report.styles?.analysis?.fixPlan)}
+    </section>
+    <section>
       <h2>Top remaining style/layout diffs</h2>
       ${diffList(topDiffs)}
     </section>
@@ -111,6 +115,10 @@ function renderInspectReport(report: InspectSelectorReport): string {
     <section>
       <h2>Root-cause clusters</h2>
       ${clusterList(report.styles.analysis?.clusters ?? [], 20)}
+    </section>
+    <section>
+      <h2>Recommended fix plan</h2>
+      ${fixPlanSection(report.styles.analysis?.fixPlan)}
     </section>
     <section>
       <h2>Diffs</h2>
@@ -207,6 +215,34 @@ function crossPageFindingList(findings: CrossPageFinding[], outputDir: string): 
       return `<li><a href="${escapeHtml(href)}">${escapeHtml(page.localUrl)}</a> (${page.diffCount.toLocaleString()} diffs)</li>`;
     }).join("")}</ul>
   </li>`).join("\n")}</ol>`;
+}
+
+function fixPlanSection(plan?: StyleFixPlan): string {
+  if (!plan) return "<p>No fix plan available.</p>";
+  const groups = [
+    ["Global CSS", plan.globalCssFixes],
+    ["Component styles", plan.componentStyleFixes],
+    ["Content/DOM", plan.contentMismatches],
+    ["Probable noise", plan.probableNoise],
+    ["Needs review", plan.needsReview]
+  ] as const;
+  const visible = groups.filter(([, items]) => items.length > 0);
+  if (visible.length === 0) return "<p>No recommended actions.</p>";
+  return visible
+    .map(
+      ([label, items]) => `<h3>${escapeHtml(label)}</h3><ol class="clusters">${items
+        .slice(0, 5)
+        .map(
+          (item) => `<li>
+      <div class="cluster-title">${escapeHtml(item.title)}</div>
+      <div class="cluster-meta">${escapeHtml(item.reason)}</div>
+      ${item.suggestedFix ? `<div class="suggestion">${escapeHtml(item.suggestedFix)}</div>` : ""}
+      <div class="cluster-meta">Selectors: ${escapeHtml(item.selectors.join(", "))}</div>
+    </li>`
+        )
+        .join("\n")}</ol>`
+    )
+    .join("\n");
 }
 
 export function formatDiff(diff: StyleDiff): string {

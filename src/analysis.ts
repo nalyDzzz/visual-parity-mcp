@@ -29,7 +29,8 @@ export function analyzeStyleDiffs(
       rawDiffCount: rawDiffs.length,
       ignoredDiffCount: rawDiffs.length - diffs.length,
       diffCount: diffs.length,
-      clusters
+      clusters,
+      fixPlan: buildFixPlan(clusters)
     }
   };
 }
@@ -259,6 +260,67 @@ function severityFor(count: number): StyleDiffCluster["severity"] {
   if (count >= 10) return "critical";
   if (count >= 3) return "major";
   return "minor";
+}
+
+function buildFixPlan(clusters: StyleDiffCluster[]): StyleAnalysis["fixPlan"] {
+  const plan: StyleAnalysis["fixPlan"] = {
+    globalCssFixes: [],
+    componentStyleFixes: [],
+    contentMismatches: [],
+    probableNoise: [],
+    needsReview: []
+  };
+
+  for (const cluster of clusters) {
+    const item = fixPlanItem(cluster);
+    if (isGlobalCssCluster(cluster)) {
+      pushLimited(plan.globalCssFixes, item);
+    } else if (cluster.kind === "count" || cluster.kind === "text") {
+      pushLimited(plan.contentMismatches, item);
+    } else if (cluster.fixability === "reference" || (cluster.severity === "minor" && cluster.count === 1 && cluster.fixability === "unknown")) {
+      pushLimited(plan.probableNoise, item);
+    } else if (cluster.fixability === "candidate" || cluster.fixability === "mixed" || cluster.suggestedFix) {
+      pushLimited(plan.componentStyleFixes, item);
+    } else {
+      pushLimited(plan.needsReview, item);
+    }
+  }
+
+  return plan;
+}
+
+function isGlobalCssCluster(cluster: StyleDiffCluster): boolean {
+  return cluster.property === "box-sizing" || cluster.property === "font-family";
+}
+
+function fixPlanItem(cluster: StyleDiffCluster): StyleAnalysis["fixPlan"]["globalCssFixes"][number] {
+  return {
+    title: formatPlanTitle(cluster),
+    reason: planReason(cluster),
+    clusterId: cluster.id,
+    selectors: cluster.selectors.slice(0, 8),
+    suggestedFix: cluster.suggestedFix,
+    examples: cluster.examples.slice(0, 3)
+  };
+}
+
+function formatPlanTitle(cluster: StyleDiffCluster): string {
+  const target = cluster.property ? `${cluster.kind} ${cluster.property}` : cluster.kind;
+  return `${target}: reference=${cluster.live ?? ""} candidate=${cluster.local ?? ""}`;
+}
+
+function planReason(cluster: StyleDiffCluster): string {
+  if (isGlobalCssCluster(cluster)) return `Repeated ${cluster.property} drift usually comes from global styles or app shell CSS.`;
+  if (cluster.kind === "count") return "Element counts differ, so style diffs may be downstream until DOM/content parity is restored.";
+  if (cluster.kind === "text") return "Text content differs and should be checked before tuning CSS.";
+  if (cluster.fixability === "reference") return "The matching source was found only on the reference side, so this may be third-party or legacy-site noise.";
+  if (cluster.fixability === "candidate") return "Candidate-side CSS provenance is available, making this a good direct fix target.";
+  if (cluster.fixability === "mixed") return "Both sides expose CSS provenance, so compare the candidate rule against the reference winner.";
+  return "No clear CSS source was found; inspect the screenshot region or selector before changing styles.";
+}
+
+function pushLimited<T>(items: T[], item: T, limit = 8): void {
+  if (items.length < limit) items.push(item);
 }
 
 function unique(values: string[]): string[] {

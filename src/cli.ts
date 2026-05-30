@@ -5,13 +5,14 @@ import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes, readPathsFile } from "./routes.js";
 import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, WaitUntil } from "./types.js";
 import { DEFAULT_OUTPUT_DIR, toNumber, uniqueNonEmpty } from "./utils.js";
+import { VERSION } from "./version.js";
 
 const program = new Command();
 
 program
   .name("visual-parity")
   .description("Visual parity QA between a reference page and a candidate page")
-  .version("0.1.0");
+  .version(VERSION);
 
 program
   .command("compare")
@@ -65,6 +66,7 @@ program
   .option("--local-base <url>", "Alias for --candidate-base")
   .option("--path <path>", "Route path to compare", collect, [])
   .option("--paths-file <file>", "Newline-separated route paths")
+  .option("--concurrency <count>", "Number of route comparisons to run at once", "1")
   .option("--out <dir>", "Output directory", DEFAULT_OUTPUT_DIR)
   .option("--config <file>", "Visual parity config file, default .visual-parity.json")
   .option("--width <px>", "Viewport width", "1440")
@@ -100,7 +102,8 @@ program
         ...makeCompareOptions({ ...opts, reference: "http://placeholder", candidate: "http://placeholder" }),
         liveBaseUrl: referenceBaseUrl,
         localBaseUrl: candidateBaseUrl,
-        paths
+        paths,
+        concurrency: Math.max(1, Math.floor(toNumber(opts.concurrency, 1)))
       };
       const report = await compareRoutes(options);
       if (opts.json) {
@@ -278,6 +281,7 @@ function compactPageSummary(report: PageComparisonReport) {
       : undefined,
     topDiffs: report.styles?.diffs.slice(0, 25).map(formatDiff) ?? [],
     topRootCauses: prioritizedRootCauses(report.styles?.analysis?.clusters ?? [], 10).map(formatCluster),
+    fixPlan: report.styles?.analysis?.fixPlan,
     remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], 10),
     scrollStates: report.scrollStates?.map((state) => ({
       position: state.position,
@@ -342,6 +346,13 @@ function printPageReport(report: PageComparisonReport): void {
     }
     const hiddenCount = remainingRootCauseCount(allClusters, 10);
     if (hiddenCount > 0) console.log(`  ${hiddenCount} minor one-off root causes hidden`);
+    const plan = report.styles?.analysis?.fixPlan;
+    const firstAction = plan && [...plan.globalCssFixes, ...plan.componentStyleFixes, ...plan.contentMismatches, ...plan.needsReview][0];
+    if (firstAction) {
+      console.log("Recommended next action:");
+      console.log(`  ${firstAction.title}`);
+      console.log(`  ${firstAction.suggestedFix ?? firstAction.reason}`);
+    }
   } else if (diffs.length > 0) {
     console.log("Top diffs:");
     for (const diff of diffs) console.log(`  ${formatDiff(diff)}`);

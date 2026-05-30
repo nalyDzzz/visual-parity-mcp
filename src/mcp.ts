@@ -5,7 +5,8 @@ import { z } from "zod";
 import { comparePages, inspectSelector } from "./compare.js";
 import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes } from "./routes.js";
-import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport } from "./types.js";
+import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, StyleFixPlan } from "./types.js";
+import { VERSION } from "./version.js";
 
 const waitUntilSchema = z
   .enum(["commit", "domcontentloaded", "load", "networkidle"])
@@ -65,6 +66,7 @@ const compareRoutesSchema = {
   liveBaseUrl: z.string().url().optional().describe("Alias for referenceBaseUrl"),
   localBaseUrl: z.string().url().optional().describe("Alias for candidateBaseUrl"),
   paths: z.array(z.string()).min(1).describe("Route paths to compare"),
+  concurrency: z.number().int().positive().default(1).describe("Number of route comparisons to run at once"),
   outputDir: z.string().optional().describe("Output directory for artifacts"),
   configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
   viewport: viewportSchema.optional(),
@@ -118,7 +120,7 @@ const inspectSelectorSchema = {
 
 const server = new McpServer({
   name: "visual-parity-mcp",
-  version: "0.1.0"
+  version: VERSION
 });
 
 server.tool("compare_pages", "Compare one reference URL against one candidate URL and write visual parity artifacts", comparePagesSchema, async (input) => {
@@ -259,6 +261,7 @@ function compactPageSummary(report: PageComparisonReport, limit: number) {
       suggestedFix: cluster.suggestedFix,
       examples: cluster.examples.slice(0, 3).map(formatDiff)
     })) ?? [],
+    fixPlan: compactFixPlan(report.styles?.analysis?.fixPlan),
     remainingRootCauses: remainingRootCauseCount(report.styles?.analysis?.clusters ?? [], limit),
     topDiffs: report.styles?.diffs.slice(0, limit).map(formatDiff) ?? []
   };
@@ -298,6 +301,24 @@ function compactRoutesSummary(report: RoutesComparisonReport, limit: number) {
       })) ?? [],
       topDiffs: result.styles?.diffs.slice(0, Math.min(limit, 10)).map(formatDiff) ?? []
     }))
+  };
+}
+
+function compactFixPlan(plan?: StyleFixPlan) {
+  if (!plan) return undefined;
+  const compactItems = (items: Array<{ title: string; reason: string; selectors: string[]; suggestedFix?: string }>) =>
+    items.slice(0, 5).map((item) => ({
+      title: item.title,
+      reason: item.reason,
+      selectors: item.selectors,
+      suggestedFix: item.suggestedFix
+    }));
+  return {
+    globalCssFixes: compactItems(plan.globalCssFixes),
+    componentStyleFixes: compactItems(plan.componentStyleFixes),
+    contentMismatches: compactItems(plan.contentMismatches),
+    probableNoise: compactItems(plan.probableNoise),
+    needsReview: compactItems(plan.needsReview)
   };
 }
 

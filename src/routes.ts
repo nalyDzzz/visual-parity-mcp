@@ -10,20 +10,18 @@ export async function compareRoutes(options: CompareRoutesOptions): Promise<Rout
   const outputDir = resolveOutputDir(options.outputDir ?? DEFAULT_OUTPUT_DIR);
   await ensureDir(outputDir);
 
-  const results = [];
-  for (const routePath of options.paths) {
+  const results = await mapWithConcurrency(options.paths, options.concurrency ?? 1, async (routePath) => {
     const liveUrl = joinUrl(options.liveBaseUrl, routePath);
     const localUrl = joinUrl(options.localBaseUrl, routePath);
     const name = routePath === "/" ? "root" : slugify(routePath);
-    const result = await comparePages({
+    return comparePages({
       ...options,
       liveUrl,
       localUrl,
       outputDir,
       name
     });
-    results.push(result);
-  }
+  });
 
   const passed = results.filter((result) => result.visual.passed).length;
   const failed = results.length - passed;
@@ -47,6 +45,24 @@ export async function compareRoutes(options: CompareRoutesOptions): Promise<Rout
   };
 
   return writeRoutesSummary(report);
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workerCount = Math.max(1, Math.min(items.length, Math.floor(concurrency)));
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    })
+  );
+
+  return results;
 }
 
 export async function readPathsFile(filePath: string): Promise<string[]> {
