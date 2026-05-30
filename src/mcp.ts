@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult, ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { artifactImageContent, artifactResourceLink, fileArtifact, type ArtifactFile } from "./artifacts.js";
 import { comparePages, inspectSelector } from "./compare.js";
 import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes } from "./routes.js";
@@ -126,19 +128,19 @@ const server = new McpServer({
 server.tool("compare_pages", "Compare one reference URL against one candidate URL and write visual parity artifacts", comparePagesSchema, async (input) => {
   const options = normalizePageInput(input as PageInput);
   const report = await comparePages(options);
-  return textResult(compactPageSummary(report, input.diffLimit ?? 25));
+  return artifactResult(compactPageSummary(report, input.diffLimit ?? 25), pageArtifacts(report), [fileArtifact(report.screenshots.diff, "diff-image", "Pixel diff image", "Pixel-level visual difference image")]);
 });
 
 server.tool("compare_routes", "Compare multiple route paths under reference/candidate base URLs", compareRoutesSchema, async (input) => {
   const options = normalizeRoutesInput(input as RoutesInput);
   const report = await compareRoutes(options);
-  return textResult(compactRoutesSummary(report, input.diffLimit ?? 25));
+  return artifactResult(compactRoutesSummary(report, input.diffLimit ?? 25), routesArtifacts(report), []);
 });
 
 server.tool("inspect_selector", "Deep inspect one selector between a reference and candidate page", inspectSelectorSchema, async (input) => {
   const options = normalizeInspectInput(input as InspectInput);
   const report = await inspectSelector(options);
-  return textResult({
+  return artifactResult({
     selector: report.selector,
     diffCount: report.styles.diffCount,
     reportJson: report.reportJson,
@@ -149,7 +151,7 @@ server.tool("inspect_selector", "Deep inspect one selector between a reference a
     topDiffs: report.styles.diffs.slice(0, input.diffLimit ?? 25).map(formatDiff),
     topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], input.diffLimit ?? 25).map(formatCluster),
     remainingRootCauses: remainingRootCauseCount(report.styles.analysis?.clusters ?? [], input.diffLimit ?? 25)
-  });
+  }, inspectArtifacts(report), inspectImageArtifacts(report));
 });
 
 const transport = new StdioServerTransport();
@@ -211,15 +213,62 @@ function resolveUrlPair(primary: string | undefined, alias: string | undefined, 
   return value;
 }
 
-function textResult(value: unknown) {
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(value, null, 2)
-      }
-    ]
-  };
+async function artifactResult(summary: unknown, links: ArtifactFile[], inlineImages: ArtifactFile[]): Promise<CallToolResult> {
+  const content: ContentBlock[] = [
+    {
+      type: "text",
+      text: JSON.stringify(summary, null, 2)
+    }
+  ];
+
+  for (const image of inlineImages) {
+    content.push(await artifactImageContent(image));
+  }
+
+  for (const link of links) {
+    content.push(await artifactResourceLink(link));
+  }
+
+  return { content };
+}
+
+function pageArtifacts(report: PageComparisonReport): ArtifactFile[] {
+  return [
+    fileArtifact(report.reportHtml, "page-report-html", "HTML report", "Human-readable visual parity report"),
+    fileArtifact(report.reportJson, "page-report-json", "JSON report", "Machine-readable visual parity report"),
+    fileArtifact(report.screenshots.live, "reference-screenshot", "Reference screenshot"),
+    fileArtifact(report.screenshots.local, "candidate-screenshot", "Candidate screenshot"),
+    fileArtifact(report.screenshots.diff, "diff-image", "Pixel diff image")
+  ];
+}
+
+function routesArtifacts(report: RoutesComparisonReport): ArtifactFile[] {
+  const artifacts = [
+    fileArtifact(report.summaryHtml, "routes-summary-html", "Routes HTML summary", "Human-readable route comparison summary"),
+    fileArtifact(report.summaryJson, "routes-summary-json", "Routes JSON summary", "Machine-readable route comparison summary")
+  ];
+  for (const [index, result] of report.results.entries()) {
+    artifacts.push(fileArtifact(result.reportHtml, `route-${index + 1}-report-html`, `Route ${index + 1} HTML report`, result.localUrl));
+    artifacts.push(fileArtifact(result.screenshots.diff, `route-${index + 1}-diff-image`, `Route ${index + 1} diff image`, result.localUrl));
+  }
+  return artifacts;
+}
+
+function inspectArtifacts(report: Awaited<ReturnType<typeof inspectSelector>>): ArtifactFile[] {
+  const artifacts = [
+    fileArtifact(report.reportHtml, "inspect-report-html", "Selector inspect HTML report"),
+    fileArtifact(report.reportJson, "inspect-report-json", "Selector inspect JSON report")
+  ];
+  if (report.screenshots.liveCrop) artifacts.push(fileArtifact(report.screenshots.liveCrop, "reference-crop", "Reference selector crop"));
+  if (report.screenshots.localCrop) artifacts.push(fileArtifact(report.screenshots.localCrop, "candidate-crop", "Candidate selector crop"));
+  return artifacts;
+}
+
+function inspectImageArtifacts(report: Awaited<ReturnType<typeof inspectSelector>>): ArtifactFile[] {
+  return [
+    report.screenshots.liveCrop ? fileArtifact(report.screenshots.liveCrop, "reference-crop", "Reference selector crop") : undefined,
+    report.screenshots.localCrop ? fileArtifact(report.screenshots.localCrop, "candidate-crop", "Candidate selector crop") : undefined
+  ].filter((artifact): artifact is ArtifactFile => Boolean(artifact));
 }
 
 function compactPageSummary(report: PageComparisonReport, limit: number) {

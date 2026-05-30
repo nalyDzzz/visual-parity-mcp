@@ -9,6 +9,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - MCP stdio server: `visual-parity-mcp`
 - CLI: `visual-parity`
 - Playwright Chromium page capture
+- MCP responses include JSON summaries, resource links for report artifacts, and inline image content for key diff/crop images
 - Pixel-level screenshot diffs with configurable thresholds
 - Computed style, text, and bounding-box diffs by selector
 - Basic stylesheet provenance for matched computed-style rules
@@ -129,7 +130,7 @@ Compare one reference URL against one candidate URL.
 }
 ```
 
-The response includes pass/fail status, raw and effective pixel diff percentages, report paths, screenshot paths, style diff counts, top root-cause clusters, fixability ranking, suggested fixes when available, and remaining raw examples.
+The response includes pass/fail status, raw and effective pixel diff percentages, report paths, screenshot paths, style diff counts, top root-cause clusters, fixability ranking, suggested fixes when available, remaining raw examples, resource links for generated artifacts, and an inline MCP image block for the main diff image.
 
 ### `compare_routes`
 
@@ -146,7 +147,7 @@ Compare multiple paths under a reference and candidate base URL.
 }
 ```
 
-Route summaries include `crossPageFindings`, sorted by impact, so global issues such as box sizing, shared footer typography, or repeated spacing drift rise above page-by-page noise.
+Route summaries include `crossPageFindings`, sorted by impact, so global issues such as box sizing, shared footer typography, or repeated spacing drift rise above page-by-page noise. MCP responses also include resource links for the route summary and per-route reports/diff images.
 
 ### `inspect_selector`
 
@@ -169,6 +170,8 @@ Legacy field names are still accepted for compatibility:
   "localUrl": "http://localhost:3000/about"
 }
 ```
+
+The MCP response includes resource links for the inspect report and inline image blocks for selector crops when the selector is present.
 
 ## CLI Usage
 
