@@ -1,0 +1,379 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { Page } from "playwright";
+import { analyzeStyleDiffs } from "./analysis.js";
+import { createBrowserSession, normalizeViewport, preparePage, screenshotFirstMatch } from "./browser.js";
+import { diffScreenshots } from "./compare.js";
+import { loadVisualParityConfig, mergeAcceptedDeviations } from "./config.js";
+import { DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
+import { applyPresets } from "./presets.js";
+import { diffStyleSnapshots } from "./styles.js";
+import type {
+  CompareSectionOptions,
+  CompareSectionsOptions,
+  CompareSectionsReport,
+  DiscoverSectionsOptions,
+  DiscoverSectionsReport,
+  DiscoveredSection,
+  SectionCandidate,
+  SectionComparisonReport,
+  StyleSelectorSnapshot
+} from "./types.js";
+import { DEFAULT_OUTPUT_DIR, ensureDir, makeRunDir, slugify, uniqueNonEmpty } from "./utils.js";
+
+const DEFAULT_SECTION_SELECTORS = [":scope", "h1", "h2", "h3", "p", "a", "button", "img", "form", "[class*='card' i]", "[class*='cta' i]"];
+
+export async function discoverSections(rawOptions: DiscoverSectionsOptions): Promise<DiscoverSectionsReport> {
+  const options = applyPresets(rawOptions);
+  const viewport = normalizeViewport(options.viewport);
+  const maxSections = options.maxSections ?? 12;
+  const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
+  const runDir = makeRunDir(outputDir, options.name, `sections-${slugify(options.localUrl)}-${Date.now()}`);
+  if (options.includeCrops) await ensureDir(runDir);
+
+  const session = await createBrowserSession(options);
+  try {
+    const context = session.context;
+    const livePage = await context.newPage();
+    const localPage = await context.newPage();
+
+    await preparePage(livePage, options.liveUrl, options);
+    await preparePage(localPage, options.localUrl, options);
+
+    const live = await collectSectionCandidates(livePage, maxSections);
+    const local = await collectSectionCandidates(localPage, maxSections);
+    const sections = matchSections(live, local).slice(0, maxSections);
+
+    if (options.includeCrops) {
+      for (const [index, section] of sections.entries()) {
+        section.screenshots = {};
+        try {
+          section.screenshots.reference = await screenshotFirstMatch(livePage, section.reference.selector, path.join(runDir, `${index + 1}-reference.png`));
+        } catch {
+          section.screenshots.reference = undefined;
+        }
+        if (section.candidate) {
+          try {
+            section.screenshots.candidate = await screenshotFirstMatch(localPage, section.candidate.selector, path.join(runDir, `${index + 1}-candidate.png`));
+          } catch {
+            section.screenshots.candidate = undefined;
+          }
+        }
+      }
+    }
+
+    const report: DiscoverSectionsReport = {
+      liveUrl: options.liveUrl,
+      localUrl: options.localUrl,
+      runDir: options.includeCrops ? runDir : undefined,
+      createdAt: new Date().toISOString(),
+      viewport,
+      sections
+    };
+    return report;
+  } finally {
+    await session.close();
+  }
+}
+
+export async function compareSection(rawOptions: CompareSectionOptions): Promise<SectionComparisonReport> {
+  const options = applyPresets(rawOptions);
+  const config = await loadVisualParityConfig(options.configPath);
+  const acceptedDeviations = mergeAcceptedDeviations(config.acceptedDeviations, options.acceptedDeviations);
+  const viewport = normalizeViewport(options.viewport);
+  const threshold = options.threshold ?? 0.1;
+  const maxDiffPercent = options.maxDiffPercent ?? 1;
+  const localSelector = options.localSelector ?? options.referenceSelector;
+  const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
+  const label = options.sectionLabel ?? options.referenceSelector;
+  const runDir = makeRunDir(outputDir, options.name, `section-${slugify(label)}-${Date.now()}`);
+  await ensureDir(runDir);
+
+  const liveCrop = path.join(runDir, "reference-section.png");
+  const localCrop = path.join(runDir, "candidate-section.png");
+  const diffCrop = path.join(runDir, "section-diff.png");
+
+  const session = await createBrowserSession(options);
+  try {
+    const context = session.context;
+    const livePage = await context.newPage();
+    const localPage = await context.newPage();
+
+    await preparePage(livePage, options.liveUrl, options);
+    await preparePage(localPage, options.localUrl, options);
+    await screenshotFirstMatch(livePage, options.referenceSelector, liveCrop);
+    await screenshotFirstMatch(localPage, localSelector, localCrop);
+
+    const visual = await diffScreenshots(liveCrop, localCrop, diffCrop, threshold, maxDiffPercent);
+    const properties = uniqueNonEmpty(options.styleProperties).length > 0 ? uniqueNonEmpty(options.styleProperties) : DEFAULT_STYLE_PROPERTIES;
+    const sectionSelectors = uniqueNonEmpty(options.sectionSelectors).length > 0 ? uniqueNonEmpty(options.sectionSelectors) : DEFAULT_SECTION_SELECTORS;
+    const maxElements = options.maxElementsPerSelector ?? 5;
+    const liveStyles = await captureScopedStyleSnapshots(livePage, options.referenceSelector, sectionSelectors, properties, maxElements);
+    const localStyles = await captureScopedStyleSnapshots(localPage, localSelector, sectionSelectors, properties, maxElements);
+    const rawDiffs = diffStyleSnapshots(liveStyles, localStyles);
+    const { diffs, analysis } = analyzeStyleDiffs(rawDiffs, acceptedDeviations, visual.effectiveDiffPercent);
+
+    const report: SectionComparisonReport = {
+      liveUrl: options.liveUrl,
+      localUrl: options.localUrl,
+      runDir,
+      createdAt: new Date().toISOString(),
+      viewport,
+      section: {
+        label,
+        referenceSelector: options.referenceSelector,
+        candidateSelector: localSelector
+      },
+      screenshots: {
+        reference: liveCrop,
+        candidate: localCrop,
+        diff: diffCrop
+      },
+      visual,
+      styles: {
+        comparedSelectors: sectionSelectors.length,
+        rawDiffCount: rawDiffs.length,
+        diffCount: diffs.length,
+        diffs,
+        analysis,
+        live: liveStyles,
+        local: localStyles
+      },
+      reportJson: path.join(runDir, "section.json")
+    };
+    await fs.writeFile(report.reportJson, JSON.stringify(report, null, 2));
+    return report;
+  } finally {
+    await session.close();
+  }
+}
+
+export async function compareSections(options: CompareSectionsOptions): Promise<CompareSectionsReport> {
+  const discovered = await discoverSections({ ...options, includeCrops: false });
+  const outputDir = path.resolve(process.cwd(), options.outputDir ?? DEFAULT_OUTPUT_DIR);
+  await ensureDir(outputDir);
+  const sections = [];
+  for (const section of discovered.sections.slice(0, options.maxSections ?? 12)) {
+    if (!section.candidate) {
+      sections.push({
+        label: section.label,
+        referenceSelector: section.reference.selector,
+        candidateSelector: undefined,
+        passed: false,
+        diffPercent: 100,
+        effectiveDiffPercent: 100,
+        reportJson: undefined,
+        diffImage: undefined,
+        nextAction: "Create or locate the matching candidate section before tuning styles."
+      });
+      continue;
+    }
+    const report = await compareSection({
+      ...options,
+      referenceSelector: section.reference.selector,
+      localSelector: section.candidate.selector,
+      sectionLabel: section.label,
+      outputDir,
+      name: slugify(section.label)
+    });
+    sections.push({
+      label: section.label,
+      referenceSelector: section.reference.selector,
+      candidateSelector: section.candidate.selector,
+      passed: report.visual.passed,
+      diffPercent: Number(report.visual.diffPercent.toFixed(4)),
+      effectiveDiffPercent: Number(report.visual.effectiveDiffPercent.toFixed(4)),
+      reportJson: report.reportJson,
+      diffImage: report.screenshots.diff,
+      nextAction: nextActionForSection(report)
+    });
+  }
+
+  const recommendedOrder = sections
+    .filter((section) => !section.passed)
+    .slice()
+    .sort((a, b) => b.effectiveDiffPercent - a.effectiveDiffPercent)
+    .map((section) => section.label);
+
+  const report: CompareSectionsReport = {
+    liveUrl: options.liveUrl,
+    localUrl: options.localUrl,
+    createdAt: new Date().toISOString(),
+    outputDir,
+    total: sections.length,
+    passed: sections.filter((section) => section.passed).length,
+    failed: sections.filter((section) => !section.passed).length,
+    recommendedOrder,
+    sections,
+    summaryJson: path.join(outputDir, "sections-summary.json")
+  };
+  await fs.writeFile(report.summaryJson, JSON.stringify(report, null, 2));
+  return report;
+}
+
+async function collectSectionCandidates(page: Page, maxSections: number): Promise<SectionCandidate[]> {
+  return page.evaluate((limit) => {
+    const candidates = Array.from(document.querySelectorAll("header, nav, main > section, main > article, main > div, section, article, footer"))
+      .filter((element) => !element.closest("[data-visual-parity-hidden='true']"))
+      .map((element) => sectionCandidate(element))
+      .filter((section): section is SectionCandidate => Boolean(section))
+      .sort((a, b) => {
+        const yDelta = a.rect.y - b.rect.y;
+        if (Math.abs(yDelta) > 8) return yDelta;
+        return b.rect.width * b.rect.height - a.rect.width * a.rect.height;
+      });
+
+    const deduped: SectionCandidate[] = [];
+    for (const candidate of candidates) {
+      if (deduped.some((existing) => Math.abs(existing.rect.y - candidate.rect.y) < 8 && Math.abs(existing.rect.height - candidate.rect.height) < 8)) continue;
+      deduped.push(candidate);
+      if (deduped.length >= limit) break;
+    }
+    return deduped;
+
+    function sectionCandidate(element: Element): SectionCandidate | undefined {
+      if (!(element instanceof HTMLElement || element instanceof SVGElement)) return undefined;
+      const rect = element.getBoundingClientRect();
+      const tag = element.tagName.toLowerCase();
+      const isLandmark = ["header", "nav", "footer", "main"].includes(tag) || element.getAttribute("role") !== null;
+      if (!isLandmark && (rect.width < window.innerWidth * 0.35 || rect.height < 40)) return undefined;
+      if (isLandmark && (rect.width < window.innerWidth * 0.2 || rect.height < 20)) return undefined;
+      const text = (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      const heading = element.querySelector("h1, h2, h3, [role='heading']");
+      const label = labelFor(element, heading?.textContent || text);
+      return {
+        label,
+        selector: selectorFor(element),
+        tagName: element.tagName.toLowerCase(),
+        text,
+        rect: {
+          x: Number((rect.x + window.scrollX).toFixed(2)),
+          y: Number((rect.y + window.scrollY).toFixed(2)),
+          width: Number(rect.width.toFixed(2)),
+          height: Number(rect.height.toFixed(2))
+        }
+      };
+    }
+
+    function labelFor(element: Element, text: string): string {
+      const tag = element.tagName.toLowerCase();
+      if (tag === "header") return "Header";
+      if (tag === "nav") return "Navigation";
+      if (tag === "footer") return "Footer";
+      const clean = text.replace(/\s+/g, " ").trim();
+      if (clean) return clean.slice(0, 64);
+      return `${tag} section`;
+    }
+
+    function selectorFor(element: Element): string {
+      if (element.id) return `#${CSS.escape(element.id)}`;
+      const tag = element.tagName.toLowerCase();
+      if (["header", "nav", "main", "footer"].includes(tag) && document.querySelectorAll(tag).length === 1) return tag;
+      const className = Array.from(element.classList).find((name) => !/^(active|open|selected|loaded|visible)$/i.test(name));
+      if (className && document.querySelectorAll(`${tag}.${CSS.escape(className)}`).length === 1) return `${tag}.${CSS.escape(className)}`;
+      const parent = element.parentElement;
+      if (!parent) return tag;
+      const siblings = Array.from(parent.children).filter((sibling) => sibling.tagName === element.tagName);
+      const index = siblings.indexOf(element) + 1;
+      const parentSelector = parent.id ? `#${CSS.escape(parent.id)}` : parent.tagName.toLowerCase();
+      return `${parentSelector} > ${tag}:nth-of-type(${index})`;
+    }
+  }, maxSections);
+}
+
+function matchSections(reference: SectionCandidate[], candidate: SectionCandidate[]): DiscoveredSection[] {
+  return reference.map((section, index) => {
+    const sameSelector = candidate.find((item) => item.selector === section.selector);
+    const verticalMatch = candidate[index];
+    const textMatch = bestTextMatch(section, candidate);
+    const matched = sameSelector ?? textMatch ?? verticalMatch;
+    const confidence = sameSelector ? 0.95 : textMatch ? 0.75 : matched ? 0.55 : 0;
+    return {
+      label: section.label,
+      reference: section,
+      candidate: matched,
+      matchConfidence: confidence
+    };
+  });
+}
+
+function bestTextMatch(section: SectionCandidate, candidates: SectionCandidate[]): SectionCandidate | undefined {
+  const tokens = words(section.text);
+  if (tokens.length < 3) return undefined;
+  let best: { section: SectionCandidate; score: number } | undefined;
+  for (const candidate of candidates) {
+    const candidateTokens = new Set(words(candidate.text));
+    const overlap = tokens.filter((token) => candidateTokens.has(token)).length / tokens.length;
+    if (overlap > (best?.score ?? 0)) best = { section: candidate, score: overlap };
+  }
+  return best && best.score >= 0.35 ? best.section : undefined;
+}
+
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9]{3,}/g)?.slice(0, 30) ?? [];
+}
+
+async function captureScopedStyleSnapshots(
+  page: Page,
+  rootSelector: string,
+  selectors: string[],
+  properties: string[],
+  maxElementsPerSelector: number
+): Promise<StyleSelectorSnapshot[]> {
+  return page.evaluate(
+    ({ rootSelector: root, selectors: scopedSelectors, properties: props, maxElements }) => {
+      const rootElement = document.querySelector(root);
+      if (!rootElement) {
+        return scopedSelectors.map((selector) => ({ selector, count: 0, elements: [], error: `Root selector not found: ${root}` }));
+      }
+      return scopedSelectors.map((selector) => {
+        try {
+          const elements = (selector === ":scope" ? [rootElement] : Array.from(rootElement.querySelectorAll(selector))).filter(isComparableElement).slice(0, maxElements);
+          return {
+            selector,
+            count: selector === ":scope" ? 1 : rootElement.querySelectorAll(selector).length,
+            elements: elements.map((element, index) => {
+              const style = window.getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              const styles: Record<string, string> = {};
+              for (const prop of props) styles[prop] = style.getPropertyValue(prop);
+              return {
+                selector,
+                index,
+                text: (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 240),
+                tagName: element.tagName.toLowerCase(),
+                rect: {
+                  x: Number(rect.x.toFixed(2)),
+                  y: Number(rect.y.toFixed(2)),
+                  width: Number(rect.width.toFixed(2)),
+                  height: Number(rect.height.toFixed(2))
+                },
+                styles
+              };
+            })
+          };
+        } catch (error) {
+          return { selector, count: 0, elements: [], error: error instanceof Error ? error.message : String(error) };
+        }
+      });
+
+      function isComparableElement(element: Element): boolean {
+        if (element.closest("[data-visual-parity-hidden='true']")) return false;
+        const style = window.getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }
+    },
+    { rootSelector, selectors, properties, maxElements: maxElementsPerSelector }
+  );
+}
+
+function nextActionForSection(report: SectionComparisonReport): string {
+  const plan = report.styles.analysis?.fixPlan;
+  const action = plan && [...plan.globalCssFixes, ...plan.componentStyleFixes, ...plan.contentMismatches, ...plan.needsReview][0];
+  if (action?.suggestedFix) return action.suggestedFix;
+  if (action?.reason) return action.reason;
+  if (!report.visual.passed) return "Inspect the section diff image and fix the largest visible layout or style drift.";
+  return "Section is within the configured visual threshold.";
+}

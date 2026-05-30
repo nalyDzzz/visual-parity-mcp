@@ -7,7 +7,21 @@ import { artifactImageContent, artifactResourceLink, fileArtifact, type Artifact
 import { comparePages, inspectSelector } from "./compare.js";
 import { formatCluster, formatCrossPageFinding, formatDiff } from "./report.js";
 import { compareRoutes } from "./routes.js";
-import type { ComparePagesOptions, CompareRoutesOptions, InspectSelectorOptions, PageComparisonReport, RoutesComparisonReport, StyleFixPlan } from "./types.js";
+import { compareSection, compareSections, discoverSections } from "./sections.js";
+import type {
+  ComparePagesOptions,
+  CompareRoutesOptions,
+  CompareSectionOptions,
+  CompareSectionsOptions,
+  CompareSectionsReport,
+  DiscoverSectionsOptions,
+  DiscoverSectionsReport,
+  InspectSelectorOptions,
+  PageComparisonReport,
+  RoutesComparisonReport,
+  SectionComparisonReport,
+  StyleFixPlan
+} from "./types.js";
 import { VERSION } from "./version.js";
 
 const waitUntilSchema = z
@@ -120,6 +134,48 @@ const inspectSelectorSchema = {
   diffLimit: z.number().int().positive().default(25)
 };
 
+const discoverSectionsSchema = {
+  referenceUrl: z.string().url().optional().describe("Reference/source page URL"),
+  candidateUrl: z.string().url().optional().describe("Candidate/target page URL"),
+  liveUrl: z.string().url().optional().describe("Alias for referenceUrl"),
+  localUrl: z.string().url().optional().describe("Alias for candidateUrl"),
+  outputDir: z.string().optional().describe("Output directory for optional crop artifacts"),
+  name: z.string().optional().describe("Run name / artifact subdirectory"),
+  viewport: viewportSchema.optional(),
+  waitUntil: waitUntilSchema,
+  waitMs: z.number().int().nonnegative().default(1000),
+  timeoutMs: z.number().int().positive().default(30000),
+  loadRetries: z.number().int().nonnegative().default(1),
+  retryDelayMs: z.number().int().nonnegative().default(1000),
+  userAgent: z.string().optional(),
+  persistentContextDir: z.string().optional(),
+  softPageHealth: z.boolean().default(false),
+  hideSelectors: z.array(z.string()).optional(),
+  presets: z.array(z.string()).optional(),
+  maxSections: z.number().int().positive().default(12),
+  includeCrops: z.boolean().default(false).describe("Capture reference/candidate section crop images for discovered sections")
+};
+
+const compareSectionSchema = {
+  ...comparePagesSchema,
+  referenceSelector: z.string().min(1).describe("Reference page section selector to crop and compare"),
+  localSelector: z.string().min(1).optional().describe("Candidate page section selector; defaults to referenceSelector"),
+  sectionLabel: z.string().optional().describe("Human-readable section label"),
+  sectionSelectors: z.array(z.string()).optional().describe("Selectors to inspect inside the section; use ':scope' for the root")
+};
+
+const compareSectionsSchema = {
+  ...discoverSectionsSchema,
+  configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
+  threshold: z.number().min(0).max(1).default(0.1),
+  maxDiffPercent: z.number().min(0).default(1),
+  styleProperties: z.array(z.string()).optional(),
+  sectionSelectors: z.array(z.string()).optional(),
+  acceptedDeviations: z.array(acceptedDeviationSchema).optional(),
+  maxElementsPerSelector: z.number().int().positive().default(5),
+  diffLimit: z.number().int().positive().default(25)
+};
+
 const server = new McpServer({
   name: "visual-parity-mcp",
   version: VERSION
@@ -154,6 +210,24 @@ server.tool("inspect_selector", "Deep inspect one selector between a reference a
   }, inspectArtifacts(report), inspectImageArtifacts(report));
 });
 
+server.tool("discover_sections", "Discover likely page sections and candidate matches for section-by-section parity work", discoverSectionsSchema, async (input) => {
+  const options = normalizeDiscoverSectionsInput(input as DiscoverSectionsInput);
+  const report = await discoverSections(options);
+  return artifactResult(compactDiscoverSectionsSummary(report), discoverSectionArtifacts(report), discoverSectionImageArtifacts(report));
+});
+
+server.tool("compare_section", "Compare one reference section against one candidate section with section crops and scoped style diffs", compareSectionSchema, async (input) => {
+  const options = normalizeCompareSectionInput(input as CompareSectionInput);
+  const report = await compareSection(options);
+  return artifactResult(compactSectionSummary(report, input.diffLimit ?? 25), sectionArtifacts(report), [fileArtifact(report.screenshots.diff, "section-diff-image", "Section diff image")]);
+});
+
+server.tool("compare_sections", "Discover and compare page sections as an agent-friendly parity checklist", compareSectionsSchema, async (input) => {
+  const options = normalizeCompareSectionsInput(input as CompareSectionsInput);
+  const report = await compareSections(options);
+  return artifactResult(compactSectionsSummary(report), sectionsArtifacts(report), []);
+});
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
@@ -172,6 +246,27 @@ type RoutesInput = Omit<CompareRoutesOptions, "liveBaseUrl" | "localBaseUrl"> & 
 };
 
 type InspectInput = Omit<InspectSelectorOptions, "liveUrl" | "localUrl"> & {
+  referenceUrl?: string;
+  candidateUrl?: string;
+  liveUrl?: string;
+  localUrl?: string;
+};
+
+type DiscoverSectionsInput = Omit<DiscoverSectionsOptions, "liveUrl" | "localUrl"> & {
+  referenceUrl?: string;
+  candidateUrl?: string;
+  liveUrl?: string;
+  localUrl?: string;
+};
+
+type CompareSectionInput = Omit<CompareSectionOptions, "liveUrl" | "localUrl"> & {
+  referenceUrl?: string;
+  candidateUrl?: string;
+  liveUrl?: string;
+  localUrl?: string;
+};
+
+type CompareSectionsInput = Omit<CompareSectionsOptions, "liveUrl" | "localUrl"> & {
   referenceUrl?: string;
   candidateUrl?: string;
   liveUrl?: string;
@@ -232,6 +327,30 @@ async function artifactResult(summary: unknown, links: ArtifactFile[], inlineIma
   return { content };
 }
 
+function normalizeDiscoverSectionsInput(input: DiscoverSectionsInput): DiscoverSectionsOptions {
+  return {
+    ...input,
+    liveUrl: resolveUrlPair(input.referenceUrl, input.liveUrl, "referenceUrl", "liveUrl"),
+    localUrl: resolveUrlPair(input.candidateUrl, input.localUrl, "candidateUrl", "localUrl")
+  };
+}
+
+function normalizeCompareSectionInput(input: CompareSectionInput): CompareSectionOptions {
+  return {
+    ...input,
+    liveUrl: resolveUrlPair(input.referenceUrl, input.liveUrl, "referenceUrl", "liveUrl"),
+    localUrl: resolveUrlPair(input.candidateUrl, input.localUrl, "candidateUrl", "localUrl")
+  };
+}
+
+function normalizeCompareSectionsInput(input: CompareSectionsInput): CompareSectionsOptions {
+  return {
+    ...input,
+    liveUrl: resolveUrlPair(input.referenceUrl, input.liveUrl, "referenceUrl", "liveUrl"),
+    localUrl: resolveUrlPair(input.candidateUrl, input.localUrl, "candidateUrl", "localUrl")
+  };
+}
+
 function pageArtifacts(report: PageComparisonReport): ArtifactFile[] {
   return [
     fileArtifact(report.reportHtml, "page-report-html", "HTML report", "Human-readable visual parity report"),
@@ -269,6 +388,35 @@ function inspectImageArtifacts(report: Awaited<ReturnType<typeof inspectSelector
     report.screenshots.liveCrop ? fileArtifact(report.screenshots.liveCrop, "reference-crop", "Reference selector crop") : undefined,
     report.screenshots.localCrop ? fileArtifact(report.screenshots.localCrop, "candidate-crop", "Candidate selector crop") : undefined
   ].filter((artifact): artifact is ArtifactFile => Boolean(artifact));
+}
+
+function discoverSectionArtifacts(report: DiscoverSectionsReport): ArtifactFile[] {
+  return report.sections.flatMap((section, index) => [
+    section.screenshots?.reference ? fileArtifact(section.screenshots.reference, `section-${index + 1}-reference-crop`, `${section.label} reference crop`) : undefined,
+    section.screenshots?.candidate ? fileArtifact(section.screenshots.candidate, `section-${index + 1}-candidate-crop`, `${section.label} candidate crop`) : undefined
+  ]).filter((artifact): artifact is ArtifactFile => Boolean(artifact));
+}
+
+function discoverSectionImageArtifacts(report: DiscoverSectionsReport): ArtifactFile[] {
+  return discoverSectionArtifacts(report).slice(0, 4);
+}
+
+function sectionArtifacts(report: SectionComparisonReport): ArtifactFile[] {
+  return [
+    fileArtifact(report.reportJson, "section-report-json", "Section JSON report"),
+    fileArtifact(report.screenshots.reference, "section-reference-crop", "Section reference crop"),
+    fileArtifact(report.screenshots.candidate, "section-candidate-crop", "Section candidate crop"),
+    fileArtifact(report.screenshots.diff, "section-diff-image", "Section diff image")
+  ];
+}
+
+function sectionsArtifacts(report: CompareSectionsReport): ArtifactFile[] {
+  const artifacts = [fileArtifact(report.summaryJson, "sections-summary-json", "Sections checklist JSON")];
+  for (const [index, section] of report.sections.entries()) {
+    if (section.reportJson) artifacts.push(fileArtifact(section.reportJson, `section-${index + 1}-report-json`, `${section.label} section report`));
+    if (section.diffImage) artifacts.push(fileArtifact(section.diffImage, `section-${index + 1}-diff-image`, `${section.label} section diff`));
+  }
+  return artifacts;
 }
 
 function compactPageSummary(report: PageComparisonReport, limit: number) {
@@ -350,6 +498,62 @@ function compactRoutesSummary(report: RoutesComparisonReport, limit: number) {
       })) ?? [],
       topDiffs: result.styles?.diffs.slice(0, Math.min(limit, 10)).map(formatDiff) ?? []
     }))
+  };
+}
+
+function compactDiscoverSectionsSummary(report: DiscoverSectionsReport) {
+  return {
+    liveUrl: report.liveUrl,
+    localUrl: report.localUrl,
+    runDir: report.runDir,
+    sections: report.sections.map((section) => ({
+      label: section.label,
+      referenceSelector: section.reference.selector,
+      candidateSelector: section.candidate?.selector,
+      matchConfidence: section.matchConfidence,
+      referenceRect: section.reference.rect,
+      candidateRect: section.candidate?.rect,
+      textSample: section.reference.text.slice(0, 160),
+      screenshots: section.screenshots
+    }))
+  };
+}
+
+function compactSectionSummary(report: SectionComparisonReport, limit: number) {
+  return {
+    passed: report.visual.passed,
+    label: report.section.label,
+    referenceSelector: report.section.referenceSelector,
+    candidateSelector: report.section.candidateSelector,
+    diffPercent: Number(report.visual.diffPercent.toFixed(4)),
+    effectiveDiffPercent: Number(report.visual.effectiveDiffPercent.toFixed(4)),
+    maxDiffPercent: report.visual.maxDiffPercent,
+    screenshots: report.screenshots,
+    reportJson: report.reportJson,
+    styleDiffCount: report.styles.diffCount,
+    topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], limit).map((cluster) => ({
+      finding: formatCluster(cluster),
+      count: cluster.count,
+      severity: cluster.severity,
+      fixability: cluster.fixability,
+      suggestedFix: cluster.suggestedFix,
+      examples: cluster.examples.slice(0, 3).map(formatDiff)
+    })),
+    fixPlan: compactFixPlan(report.styles.analysis?.fixPlan),
+    topDiffs: report.styles.diffs.slice(0, limit).map(formatDiff)
+  };
+}
+
+function compactSectionsSummary(report: CompareSectionsReport) {
+  return {
+    liveUrl: report.liveUrl,
+    localUrl: report.localUrl,
+    total: report.total,
+    passed: report.passed,
+    failed: report.failed,
+    recommendedOrder: report.recommendedOrder,
+    summaryJson: report.summaryJson,
+    sections: report.sections
   };
 }
 

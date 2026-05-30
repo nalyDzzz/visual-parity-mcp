@@ -16,6 +16,7 @@ It is designed for website rebuilds, CMS migrations, framework rewrites, landing
 - Root-cause clustering for repeated style/layout diffs
 - Candidate-fixable root-cause ranking when stylesheet provenance is available
 - Raw and effective visual diff percentages; effective diff excludes masked/noisy selector regions
+- Section-by-section discovery and comparison tools for agent repair loops
 - Cross-page aggregation for route comparisons
 - Broken-page detection for HTTP errors, empty bodies, and missing landmarks
 - Per-project accepted deviations through `.visual-parity.json`
@@ -172,6 +173,56 @@ Legacy field names are still accepted for compatibility:
 ```
 
 The MCP response includes resource links for the inspect report and inline image blocks for selector crops when the selector is present.
+
+### `discover_sections`
+
+Discover likely page sections and candidate matches so an agent can work down the page deliberately instead of guessing selectors.
+
+```json
+{
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
+  "waitUntil": "domcontentloaded",
+  "maxSections": 12,
+  "includeCrops": true
+}
+```
+
+The response includes labels, reference/candidate selectors, bounding boxes, text samples, match confidence, and optional crop artifacts.
+
+### `compare_section`
+
+Compare one section crop and scoped style snapshot.
+
+```json
+{
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
+  "referenceSelector": "main > section:nth-of-type(1)",
+  "localSelector": "main > section:nth-of-type(1)",
+  "sectionLabel": "Hero",
+  "waitUntil": "domcontentloaded",
+  "maxDiffPercent": 1
+}
+```
+
+The response includes reference/candidate/diff crop artifacts, section-level pixel diff, scoped style/layout/text diffs, and a section fix plan.
+
+### `compare_sections`
+
+Discover sections, compare each matched section, and return an agent-friendly checklist.
+
+```json
+{
+  "referenceUrl": "https://example.com/about",
+  "candidateUrl": "http://localhost:3000/about",
+  "waitUntil": "domcontentloaded",
+  "maxSections": 8,
+  "maxDiffPercent": 1
+}
+```
+
+The response includes pass/fail counts, per-section next actions, diff artifact links, and `recommendedOrder` so an agent can fix the largest failing sections first.
 
 ## CLI Usage
 
@@ -389,6 +440,14 @@ You can add more masks with `--hide` or `hideSelectors`.
 5. Fix the candidate page.
 6. Re-run the comparison.
 7. Repeat until the remaining differences are acceptable.
+
+For agent-led section repair, use:
+
+1. Run `discover_sections`.
+2. Run `compare_sections` to get a section checklist and recommended order.
+3. Fix the first failing section.
+4. Re-run `compare_section` for that section.
+5. Move to the next failing section until the checklist passes or remaining differences are accepted.
 
 For Next.js local development, include `waitUntil: "domcontentloaded"` in MCP calls or `--wait-until domcontentloaded` in CLI calls.
 

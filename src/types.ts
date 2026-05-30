@@ -90,6 +90,44 @@ export interface InspectSelectorOptions {
   diffLimit?: number;
 }
 
+export interface DiscoverSectionsOptions {
+  liveUrl: string;
+  localUrl: string;
+  outputDir?: string;
+  name?: string;
+  viewport?: ViewportOptions;
+  waitUntil?: WaitUntil;
+  waitMs?: number;
+  timeoutMs?: number;
+  loadRetries?: number;
+  retryDelayMs?: number;
+  userAgent?: string;
+  persistentContextDir?: string;
+  softPageHealth?: boolean;
+  hideSelectors?: string[];
+  presets?: string[];
+  maxSections?: number;
+  includeCrops?: boolean;
+}
+
+export interface CompareSectionOptions extends Omit<ComparePagesOptions, "selectors" | "fullPage" | "scrollPositions"> {
+  referenceSelector: string;
+  localSelector?: string;
+  sectionLabel?: string;
+  sectionSelectors?: string[];
+}
+
+export interface CompareSectionsOptions extends DiscoverSectionsOptions {
+  configPath?: string;
+  threshold?: number;
+  maxDiffPercent?: number;
+  styleProperties?: string[];
+  sectionSelectors?: string[];
+  acceptedDeviations?: AcceptedDeviation[];
+  maxElementsPerSelector?: number;
+  diffLimit?: number;
+}
+
 export interface AcceptedDeviation {
   selector?: string;
   property?: string;
@@ -297,4 +335,81 @@ export interface InspectSelectorReport {
   };
   reportJson: string;
   reportHtml: string;
+}
+
+export interface SectionCandidate {
+  label: string;
+  selector: string;
+  tagName: string;
+  text: string;
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface DiscoveredSection {
+  label: string;
+  reference: SectionCandidate;
+  candidate?: SectionCandidate;
+  matchConfidence: number;
+  screenshots?: {
+    reference?: string;
+    candidate?: string;
+  };
+}
+
+export interface DiscoverSectionsReport {
+  liveUrl: string;
+  localUrl: string;
+  runDir?: string;
+  createdAt: string;
+  viewport: ViewportOptions;
+  sections: DiscoveredSection[];
+}
+
+export interface SectionComparisonReport {
+  liveUrl: string;
+  localUrl: string;
+  runDir: string;
+  createdAt: string;
+  viewport: ViewportOptions;
+  section: {
+    label: string;
+    referenceSelector: string;
+    candidateSelector: string;
+  };
+  screenshots: {
+    reference: string;
+    candidate: string;
+    diff: string;
+  };
+  visual: PageComparisonReport["visual"];
+  styles: NonNullable<PageComparisonReport["styles"]>;
+  reportJson: string;
+}
+
+export interface CompareSectionsReport {
+  liveUrl: string;
+  localUrl: string;
+  createdAt: string;
+  outputDir: string;
+  total: number;
+  passed: number;
+  failed: number;
+  recommendedOrder: string[];
+  sections: Array<{
+    label: string;
+    referenceSelector: string;
+    candidateSelector?: string;
+    passed: boolean;
+    diffPercent: number;
+    effectiveDiffPercent: number;
+    reportJson?: string;
+    diffImage?: string;
+    nextAction: string;
+  }>;
+  summaryJson: string;
 }
