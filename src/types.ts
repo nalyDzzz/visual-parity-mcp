@@ -389,6 +389,7 @@ export interface SectionComparisonReport {
   visual: PageComparisonReport["visual"];
   styles: NonNullable<PageComparisonReport["styles"]>;
   reportJson: string;
+  reportHtml: string;
 }
 
 export interface CompareSectionsReport {
@@ -408,8 +409,10 @@ export interface CompareSectionsReport {
     diffPercent: number;
     effectiveDiffPercent: number;
     reportJson?: string;
+    reportHtml?: string;
     diffImage?: string;
     nextAction: string;
   }>;
   summaryJson: string;
+  summaryHtml: string;
 }

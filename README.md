@@ -206,7 +206,7 @@ Compare one section crop and scoped style snapshot.
 }
 ```
 
-The response includes reference/candidate/diff crop artifacts, section-level pixel diff, scoped style/layout/text diffs, and a section fix plan.
+The response includes reference/candidate/diff crop artifacts, section-level pixel diff, scoped style/layout/text diffs, a section fix plan, `section.json`, and `section.html`.
 
 ### `compare_sections`
 
@@ -222,7 +222,7 @@ Discover sections, compare each matched section, and return an agent-friendly ch
 }
 ```
 
-The response includes pass/fail counts, per-section next actions, diff artifact links, and `recommendedOrder` so an agent can fix the largest failing sections first.
+The response includes pass/fail counts, per-section next actions, diff/report artifact links, `sections-summary.json`, `sections-summary.html`, and `recommendedOrder` so an agent can fix the largest failing sections first.
 
 ## CLI Usage
 
@@ -444,6 +444,8 @@ The JSON report includes:
 - style-rule provenance on style diffs when available
 - root-cause clusters under `styles.analysis.clusters`
 - route-level cross-page clusters under `crossPageFindings`
+- section-level reports from `visual-parity section` include `section.json` and `section.html`
+- section checklist runs from `visual-parity sections` include `sections-summary.json` and `sections-summary.html`
 
 Artifact names still use `live` and `local` for backward compatibility.
 

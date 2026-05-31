@@ -512,6 +512,7 @@ function compactSectionSummary(report: SectionComparisonReport) {
     maxDiffPercent: report.visual.maxDiffPercent,
     screenshots: report.screenshots,
     reportJson: report.reportJson,
+    reportHtml: report.reportHtml,
     styleDiffCount: report.styles.diffCount,
     topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], 10).map(formatCluster),
     fixPlan: report.styles.analysis?.fixPlan,
@@ -628,6 +629,7 @@ function humanSectionSummary(report: SectionComparisonReport): string {
     `Candidate selector: ${report.section.candidateSelector}`,
     `Diff: ${report.visual.diffPercent.toFixed(3)}% (effective ${report.visual.effectiveDiffPercent.toFixed(3)}%, max ${report.visual.maxDiffPercent.toFixed(3)}%)`,
     "Artifacts:",
+    `  report: ${report.reportHtml}`,
     `  json: ${report.reportJson}`,
     `  reference: ${report.screenshots.reference}`,
     `  candidate: ${report.screenshots.candidate}`,
@@ -655,6 +657,7 @@ function humanSectionsSummary(report: CompareSectionsReport): string {
     `Reference: ${report.liveUrl}`,
     `Candidate: ${report.localUrl}`,
     `Sections: ${report.total} total, ${report.passed} passed, ${report.failed} failed`,
+    `Report: ${report.summaryHtml}`,
     `Summary: ${report.summaryJson}`
   ];
   if (report.recommendedOrder.length > 0) {
@@ -666,6 +669,7 @@ function humanSectionsSummary(report: CompareSectionsReport): string {
       `    reference: ${section.referenceSelector}`,
       `    candidate: ${section.candidateSelector ?? "<no match>"}`
     );
+    if (section.reportHtml) lines.push(`    report: ${section.reportHtml}`);
     if (section.diffImage) lines.push(`    diff: ${section.diffImage}`);
     lines.push(`    next: ${section.nextAction}`);
   }

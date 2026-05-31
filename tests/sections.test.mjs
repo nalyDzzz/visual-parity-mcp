@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { compareSection, compareSections, discoverSections } from "../dist/sections.js";
@@ -31,11 +31,14 @@ test("section workflow discovers and compares fixture sections", async () => {
     assert.equal(section.section.label, "Hero");
     assert.equal(section.visual.passed, false);
     assert.ok(section.styles.diffCount > 0);
+    assert.ok((await stat(section.reportHtml)).isFile());
 
     const checklist = await compareSections({ ...common, outputDir: ".visual-parity/reports/tests/sections" });
     assert.equal(checklist.total, discovered.sections.length);
     assert.ok(checklist.failed > 0);
     assert.ok(checklist.recommendedOrder.length > 0);
+    assert.ok((await stat(checklist.summaryHtml)).isFile());
+    assert.ok(checklist.sections.some((section) => section.reportHtml));
   } finally {
     await server.close();
   }

@@ -403,6 +403,7 @@ function discoverSectionImageArtifacts(report: DiscoverSectionsReport): Artifact
 
 function sectionArtifacts(report: SectionComparisonReport): ArtifactFile[] {
   return [
+    fileArtifact(report.reportHtml, "section-report-html", "Section HTML report"),
     fileArtifact(report.reportJson, "section-report-json", "Section JSON report"),
     fileArtifact(report.screenshots.reference, "section-reference-crop", "Section reference crop"),
     fileArtifact(report.screenshots.candidate, "section-candidate-crop", "Section candidate crop"),
@@ -411,8 +412,12 @@ function sectionArtifacts(report: SectionComparisonReport): ArtifactFile[] {
 }
 
 function sectionsArtifacts(report: CompareSectionsReport): ArtifactFile[] {
-  const artifacts = [fileArtifact(report.summaryJson, "sections-summary-json", "Sections checklist JSON")];
+  const artifacts = [
+    fileArtifact(report.summaryHtml, "sections-summary-html", "Sections checklist HTML"),
+    fileArtifact(report.summaryJson, "sections-summary-json", "Sections checklist JSON")
+  ];
   for (const [index, section] of report.sections.entries()) {
+    if (section.reportHtml) artifacts.push(fileArtifact(section.reportHtml, `section-${index + 1}-report-html`, `${section.label} section HTML report`));
     if (section.reportJson) artifacts.push(fileArtifact(section.reportJson, `section-${index + 1}-report-json`, `${section.label} section report`));
     if (section.diffImage) artifacts.push(fileArtifact(section.diffImage, `section-${index + 1}-diff-image`, `${section.label} section diff`));
   }
@@ -530,6 +535,7 @@ function compactSectionSummary(report: SectionComparisonReport, limit: number) {
     maxDiffPercent: report.visual.maxDiffPercent,
     screenshots: report.screenshots,
     reportJson: report.reportJson,
+    reportHtml: report.reportHtml,
     styleDiffCount: report.styles.diffCount,
     topRootCauses: prioritizedRootCauses(report.styles.analysis?.clusters ?? [], limit).map((cluster) => ({
       finding: formatCluster(cluster),
@@ -553,6 +559,7 @@ function compactSectionsSummary(report: CompareSectionsReport) {
     failed: report.failed,
     recommendedOrder: report.recommendedOrder,
     summaryJson: report.summaryJson,
+    summaryHtml: report.summaryHtml,
     sections: report.sections
   };
 }

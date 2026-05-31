@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "playwright";
 import { analyzeStyleDiffs } from "./analysis.js";
@@ -7,6 +6,7 @@ import { diffScreenshots } from "./compare.js";
 import { loadVisualParityConfig, mergeAcceptedDeviations } from "./config.js";
 import { DEFAULT_STYLE_PROPERTIES } from "./defaults.js";
 import { applyPresets } from "./presets.js";
+import { writeSectionReport, writeSectionsSummary } from "./report.js";
 import { diffStyleSnapshots } from "./styles.js";
 import type {
   CompareSectionOptions,
@@ -139,10 +139,10 @@ export async function compareSection(rawOptions: CompareSectionOptions): Promise
         live: liveStyles,
         local: localStyles
       },
-      reportJson: path.join(runDir, "section.json")
+      reportJson: path.join(runDir, "section.json"),
+      reportHtml: path.join(runDir, "section.html")
     };
-    await fs.writeFile(report.reportJson, JSON.stringify(report, null, 2));
-    return report;
+    return writeSectionReport(report);
   } finally {
     await session.close();
   }
@@ -163,6 +163,7 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
         diffPercent: 100,
         effectiveDiffPercent: 100,
         reportJson: undefined,
+        reportHtml: undefined,
         diffImage: undefined,
         nextAction: "Create or locate the matching candidate section before tuning styles."
       });
@@ -184,6 +185,7 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
       diffPercent: Number(report.visual.diffPercent.toFixed(4)),
       effectiveDiffPercent: Number(report.visual.effectiveDiffPercent.toFixed(4)),
       reportJson: report.reportJson,
+      reportHtml: report.reportHtml,
       diffImage: report.screenshots.diff,
       nextAction: nextActionForSection(report)
     });
@@ -205,10 +207,10 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
     failed: sections.filter((section) => !section.passed).length,
     recommendedOrder,
     sections,
-    summaryJson: path.join(outputDir, "sections-summary.json")
+    summaryJson: path.join(outputDir, "sections-summary.json"),
+    summaryHtml: path.join(outputDir, "sections-summary.html")
   };
-  await fs.writeFile(report.summaryJson, JSON.stringify(report, null, 2));
-  return report;
+  return writeSectionsSummary(report);
 }
 
 async function collectSectionCandidates(page: Page, maxSections: number): Promise<SectionCandidate[]> {

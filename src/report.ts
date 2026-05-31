@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CrossPageFinding, InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, StyleDiff, StyleDiffCluster, StyleFixPlan, StyleRuleSource } from "./types.js";
+import type { CompareSectionsReport, CrossPageFinding, InspectSelectorReport, PageComparisonReport, RoutesComparisonReport, SectionComparisonReport, StyleDiff, StyleDiffCluster, StyleFixPlan, StyleRuleSource } from "./types.js";
 import { ensureDir, escapeHtml, relativeForHtml } from "./utils.js";
 
 export async function writePageReport(report: PageComparisonReport): Promise<PageComparisonReport> {
@@ -27,6 +27,24 @@ export async function writeRoutesSummary(report: RoutesComparisonReport): Promis
   report.summaryHtml = path.join(report.outputDir, "summary.html");
   await fs.writeFile(report.summaryJson, JSON.stringify(report, null, 2));
   await fs.writeFile(report.summaryHtml, renderRoutesSummary(report));
+  return report;
+}
+
+export async function writeSectionReport(report: SectionComparisonReport): Promise<SectionComparisonReport> {
+  await ensureDir(report.runDir);
+  report.reportJson = path.join(report.runDir, "section.json");
+  report.reportHtml = path.join(report.runDir, "section.html");
+  await fs.writeFile(report.reportJson, JSON.stringify(report, null, 2));
+  await fs.writeFile(report.reportHtml, renderSectionReport(report));
+  return report;
+}
+
+export async function writeSectionsSummary(report: CompareSectionsReport): Promise<CompareSectionsReport> {
+  await ensureDir(report.outputDir);
+  report.summaryJson = path.join(report.outputDir, "sections-summary.json");
+  report.summaryHtml = path.join(report.outputDir, "sections-summary.html");
+  await fs.writeFile(report.summaryJson, JSON.stringify(report, null, 2));
+  await fs.writeFile(report.summaryHtml, renderSectionsSummary(report));
   return report;
 }
 
@@ -158,6 +176,115 @@ function renderRoutesSummary(report: RoutesComparisonReport): string {
     <section>
       <h2>Routes</h2>
       <table><thead><tr><th>Status</th><th>Candidate URL</th><th>Diff</th><th>Report</th></tr></thead><tbody>${rows}</tbody></table>
+    </section>`
+  );
+}
+
+function renderSectionReport(report: SectionComparisonReport): string {
+  const referenceImg = relativeForHtml(report.screenshots.reference, report.runDir);
+  const candidateImg = relativeForHtml(report.screenshots.candidate, report.runDir);
+  const diffImg = relativeForHtml(report.screenshots.diff, report.runDir);
+  const status = report.visual.passed ? "PASS" : "FAIL";
+
+  return htmlShell(
+    `Section ${status}: ${report.section.label}`,
+    `<section class="hero ${report.visual.passed ? "pass" : "fail"}">
+      <div>
+        <p class="eyebrow">Section parity</p>
+        <h1>${status}</h1>
+        <p>${escapeHtml(report.section.label)}</p>
+      </div>
+      <dl>
+        <div><dt>Diff</dt><dd>${report.visual.diffPercent.toFixed(3)}%</dd></div>
+        <div><dt>Effective</dt><dd>${report.visual.effectiveDiffPercent.toFixed(3)}%</dd></div>
+        <div><dt>Max</dt><dd>${report.visual.maxDiffPercent.toFixed(3)}%</dd></div>
+        <div><dt>Style Diffs</dt><dd>${report.styles.diffCount.toLocaleString()}</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h2>Selectors</h2>
+      <ul>
+        <li>Reference: <code>${escapeHtml(report.section.referenceSelector)}</code></li>
+        <li>Candidate: <code>${escapeHtml(report.section.candidateSelector)}</code></li>
+      </ul>
+    </section>
+    <section>
+      <h2>Section Crops</h2>
+      <div class="grid three">
+        ${imageCard("Reference section", referenceImg)}
+        ${imageCard("Candidate section", candidateImg)}
+        ${imageCard("Diff", diffImg)}
+      </div>
+    </section>
+    <section>
+      <h2>Root-cause clusters</h2>
+      ${clusterList(report.styles.analysis?.clusters ?? [], 20)}
+    </section>
+    <section>
+      <h2>Recommended fix plan</h2>
+      ${fixPlanSection(report.styles.analysis?.fixPlan)}
+    </section>
+    <section>
+      <h2>Top section diffs</h2>
+      ${diffList(report.styles.diffs.slice(0, 120))}
+    </section>
+    <section>
+      <h2>Artifacts</h2>
+      <ul>
+        <li>JSON: <code>${escapeHtml(report.reportJson)}</code></li>
+        <li>HTML: <code>${escapeHtml(report.reportHtml)}</code></li>
+        <li>Diff: <code>${escapeHtml(report.screenshots.diff)}</code></li>
+      </ul>
+    </section>`
+  );
+}
+
+function renderSectionsSummary(report: CompareSectionsReport): string {
+  const rows = report.sections
+    .map((section) => {
+      const status = section.passed ? "PASS" : "FAIL";
+      const reportLink = section.reportHtml ? path.relative(report.outputDir, section.reportHtml).split(path.sep).join("/") : undefined;
+      const diffLink = section.diffImage ? path.relative(report.outputDir, section.diffImage).split(path.sep).join("/") : undefined;
+      return `<tr>
+        <td class="${section.passed ? "ok" : "bad"}">${status}</td>
+        <td>${escapeHtml(section.label)}</td>
+        <td>${section.effectiveDiffPercent.toFixed(3)}%</td>
+        <td><code>${escapeHtml(section.referenceSelector)}</code></td>
+        <td><code>${escapeHtml(section.candidateSelector ?? "<no match>")}</code></td>
+        <td>${reportLink ? `<a href="${escapeHtml(reportLink)}">report</a>` : ""}${reportLink && diffLink ? " · " : ""}${diffLink ? `<a href="${escapeHtml(diffLink)}">diff</a>` : ""}</td>
+      </tr>`;
+    })
+    .join("\n");
+
+  return htmlShell(
+    "Visual Parity Section Summary",
+    `<section class="hero ${report.failed === 0 ? "pass" : "fail"}">
+      <div>
+        <p class="eyebrow">Section checklist</p>
+        <h1>${report.failed === 0 ? "PASS" : "FAIL"}</h1>
+        <p>${escapeHtml(report.liveUrl)} <span>vs</span> ${escapeHtml(report.localUrl)}</p>
+      </div>
+      <dl>
+        <div><dt>Total</dt><dd>${report.total}</dd></div>
+        <div><dt>Passed</dt><dd>${report.passed}</dd></div>
+        <div><dt>Failed</dt><dd>${report.failed}</dd></div>
+        <div><dt>Next</dt><dd>${escapeHtml(report.recommendedOrder[0] ?? "Done")}</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h2>Recommended Order</h2>
+      ${report.recommendedOrder.length > 0 ? `<ol>${report.recommendedOrder.map((label) => `<li>${escapeHtml(label)}</li>`).join("")}</ol>` : "<p>All sections passed.</p>"}
+    </section>
+    <section>
+      <h2>Sections</h2>
+      <table><thead><tr><th>Status</th><th>Section</th><th>Diff</th><th>Reference</th><th>Candidate</th><th>Artifacts</th></tr></thead><tbody>${rows}</tbody></table>
+    </section>
+    <section>
+      <h2>Next Actions</h2>
+      <ol class="clusters">${report.sections
+        .filter((section) => !section.passed)
+        .map((section) => `<li><div class="cluster-title">${escapeHtml(section.label)}</div><div class="cluster-meta">${escapeHtml(section.nextAction)}</div></li>`)
+        .join("")}</ol>
     </section>`
   );
 }
