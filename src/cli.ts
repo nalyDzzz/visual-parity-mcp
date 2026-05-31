@@ -289,6 +289,7 @@ program
   .option("--soft-page-health", "Warn instead of failing on broken-page health checks", false)
   .option("--threshold <number>", "pixelmatch threshold", "0.1")
   .option("--max-diff-percent <number>", "Maximum allowed diff percent", "1")
+  .option("--concurrency <count>", "Number of section comparisons to run at once", "1")
   .option("--hide <css>", "Selector to hide before screenshot", collect, [])
   .option("--preset <name>", "Preset selector/noise mask bundle, e.g. hubspot, nextjs-fonts", collect, [])
   .option("--max-sections <count>", "Maximum sections to compare", "12")
@@ -383,6 +384,7 @@ function makeCompareSectionsOptions(opts: Record<string, any>): CompareSectionsO
     configPath: opts.config,
     threshold: toNumber(opts.threshold, 0.1),
     maxDiffPercent: toNumber(opts.maxDiffPercent, 1),
+    concurrency: Math.max(1, Math.floor(toNumber(opts.concurrency, 1))),
     maxSections: Math.max(1, Math.floor(toNumber(opts.maxSections, 12))),
     sectionSelectors: uniqueNonEmpty(opts.sectionSelector)
   };

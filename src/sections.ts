@@ -152,10 +152,9 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
   const discovered = await discoverSections({ ...options, includeCrops: false });
   const outputDir = path.resolve(process.cwd(), options.outputDir ?? DEFAULT_OUTPUT_DIR);
   await ensureDir(outputDir);
-  const sections = [];
-  for (const section of discovered.sections.slice(0, options.maxSections ?? 12)) {
+  const sections = await mapWithConcurrency(discovered.sections.slice(0, options.maxSections ?? 12), options.concurrency ?? 1, async (section) => {
     if (!section.candidate) {
-      sections.push({
+      return {
         label: section.label,
         referenceSelector: section.reference.selector,
         candidateSelector: undefined,
@@ -166,8 +165,7 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
         reportHtml: undefined,
         diffImage: undefined,
         nextAction: "Create or locate the matching candidate section before tuning styles."
-      });
-      continue;
+      };
     }
     const report = await compareSection({
       ...options,
@@ -177,7 +175,7 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
       outputDir,
       name: slugify(section.label)
     });
-    sections.push({
+    return {
       label: section.label,
       referenceSelector: section.reference.selector,
       candidateSelector: section.candidate.selector,
@@ -188,8 +186,8 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
       reportHtml: report.reportHtml,
       diffImage: report.screenshots.diff,
       nextAction: nextActionForSection(report)
-    });
-  }
+    };
+  });
 
   const recommendedOrder = sections
     .filter((section) => !section.passed)
@@ -211,6 +209,24 @@ export async function compareSections(options: CompareSectionsOptions): Promise<
     summaryHtml: path.join(outputDir, "sections-summary.html")
   };
   return writeSectionsSummary(report);
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workerCount = Math.max(1, Math.min(items.length, Math.floor(concurrency)));
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    })
+  );
+
+  return results;
 }
 
 async function collectSectionCandidates(page: Page, maxSections: number): Promise<SectionCandidate[]> {

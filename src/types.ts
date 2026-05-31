@@ -121,6 +121,7 @@ export interface CompareSectionsOptions extends DiscoverSectionsOptions {
   configPath?: string;
   threshold?: number;
   maxDiffPercent?: number;
+  concurrency?: number;
   styleProperties?: string[];
   sectionSelectors?: string[];
   acceptedDeviations?: AcceptedDeviation[];

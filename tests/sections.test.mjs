@@ -38,7 +38,7 @@ test("section workflow discovers and compares fixture sections", async () => {
     assert.ok(section.styles.diffCount > 0);
     assert.ok((await stat(section.reportHtml)).isFile());
 
-    const checklist = await compareSections({ ...common, outputDir: ".visual-parity/reports/tests/sections" });
+    const checklist = await compareSections({ ...common, outputDir: ".visual-parity/reports/tests/sections", concurrency: 2 });
     assert.equal(checklist.total, discovered.sections.length);
     assert.ok(checklist.failed > 0);
     assert.ok(checklist.recommendedOrder.length > 0);

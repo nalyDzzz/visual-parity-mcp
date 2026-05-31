@@ -169,6 +169,7 @@ const compareSectionsSchema = {
   configPath: z.string().optional().describe("Visual parity config file, default .visual-parity.json"),
   threshold: z.number().min(0).max(1).default(0.1),
   maxDiffPercent: z.number().min(0).default(1),
+  concurrency: z.number().int().positive().default(1).describe("Number of section comparisons to run at once"),
   styleProperties: z.array(z.string()).optional(),
   sectionSelectors: z.array(z.string()).optional(),
   acceptedDeviations: z.array(acceptedDeviationSchema).optional(),

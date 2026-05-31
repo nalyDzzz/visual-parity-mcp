@@ -218,6 +218,7 @@ Discover sections, compare each matched section, and return an agent-friendly ch
   "candidateUrl": "http://localhost:3000/about",
   "waitUntil": "domcontentloaded",
   "maxSections": 8,
+  "concurrency": 2,
   "maxDiffPercent": 1
 }
 ```
@@ -293,7 +294,8 @@ visual-parity sections \
   --reference https://example.com/about \
   --candidate http://localhost:3000/about \
   --wait-until domcontentloaded \
-  --max-sections 8
+  --max-sections 8 \
+  --concurrency 2
 ```
 
 ## Common Options
@@ -314,7 +316,7 @@ visual-parity sections \
 --timeout-ms <ms>           Navigation timeout, default 30000
 --load-retries <count>      Retry count for blocked or transiently empty page loads, default 1
 --retry-delay-ms <ms>       Delay between page load retries, default 1000
---concurrency <count>       Route comparisons to run at once for routes command, default 1
+--concurrency <count>       Route/section comparisons to run at once for routes/sections commands, default 1
 --user-agent <value>        Override browser user agent
 --persistent-context-dir <dir> Reuse cookies/storage from a persistent Playwright profile directory
 --soft-page-health          Warn instead of failing on broken-page health checks
