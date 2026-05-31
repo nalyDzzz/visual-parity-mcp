@@ -516,6 +516,7 @@ function compactDiscoverSectionsSummary(report: DiscoverSectionsReport) {
       referenceSelector: section.reference.selector,
       candidateSelector: section.candidate?.selector,
       matchConfidence: section.matchConfidence,
+      matchReason: section.matchReason,
       referenceRect: section.reference.rect,
       candidateRect: section.candidate?.rect,
       textSample: section.reference.text.slice(0, 160),

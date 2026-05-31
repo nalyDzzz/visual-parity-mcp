@@ -242,11 +242,15 @@ async function collectSectionCandidates(page: Page, maxSections: number): Promis
       if (isLandmark && (rect.width < window.innerWidth * 0.2 || rect.height < 20)) return undefined;
       const text = (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 240);
       const heading = element.querySelector("h1, h2, h3, [role='heading']");
-      const label = labelFor(element, heading?.textContent || text);
+      const headingText = (heading?.textContent || "").replace(/\s+/g, " ").trim();
+      const label = labelFor(element, headingText || text);
       return {
         label,
         selector: selectorFor(element),
         tagName: element.tagName.toLowerCase(),
+        id: element.id || undefined,
+        classNames: Array.from(element.classList),
+        heading: headingText || undefined,
         text,
         rect: {
           x: Number((rect.x + window.scrollX).toFixed(2)),
@@ -284,35 +288,96 @@ async function collectSectionCandidates(page: Page, maxSections: number): Promis
 }
 
 function matchSections(reference: SectionCandidate[], candidate: SectionCandidate[]): DiscoveredSection[] {
+  const used = new Set<number>();
   return reference.map((section, index) => {
-    const sameSelector = candidate.find((item) => item.selector === section.selector);
-    const verticalMatch = candidate[index];
-    const textMatch = bestTextMatch(section, candidate);
-    const matched = sameSelector ?? textMatch ?? verticalMatch;
-    const confidence = sameSelector ? 0.95 : textMatch ? 0.75 : matched ? 0.55 : 0;
+    let best: SectionMatch | undefined;
+    for (const [candidateIndex, candidateSection] of candidate.entries()) {
+      if (used.has(candidateIndex)) continue;
+      const match = scoreSectionMatch(section, candidateSection, index, candidateIndex);
+      if (!best || match.score > best.score) best = match;
+    }
+
+    const matched = best && best.score >= 0.34 ? best.section : undefined;
+    if (matched && typeof best?.candidateIndex === "number") used.add(best.candidateIndex);
     return {
       label: section.label,
       reference: section,
       candidate: matched,
-      matchConfidence: confidence
+      matchConfidence: best ? Number(best.score.toFixed(2)) : 0,
+      matchReason: best?.reason
     };
   });
 }
 
-function bestTextMatch(section: SectionCandidate, candidates: SectionCandidate[]): SectionCandidate | undefined {
-  const tokens = words(section.text);
-  if (tokens.length < 3) return undefined;
-  let best: { section: SectionCandidate; score: number } | undefined;
-  for (const candidate of candidates) {
-    const candidateTokens = new Set(words(candidate.text));
-    const overlap = tokens.filter((token) => candidateTokens.has(token)).length / tokens.length;
-    if (overlap > (best?.score ?? 0)) best = { section: candidate, score: overlap };
-  }
-  return best && best.score >= 0.35 ? best.section : undefined;
+interface SectionMatch {
+  section: SectionCandidate;
+  candidateIndex: number;
+  score: number;
+  reason: string;
+}
+
+function scoreSectionMatch(reference: SectionCandidate, candidate: SectionCandidate, referenceIndex: number, candidateIndex: number): SectionMatch {
+  const selectorScore = reference.selector === candidate.selector ? 1 : 0;
+  const tagScore = reference.tagName === candidate.tagName ? 1 : sameLandmarkKind(reference, candidate) ? 0.75 : 0;
+  const idScore = reference.id && candidate.id ? similarity(words(reference.id), words(candidate.id)) : 0;
+  const classScore = similarity(reference.classNames.flatMap(words), candidate.classNames.flatMap(words));
+  const headingScore = similarity(words(reference.heading ?? ""), words(candidate.heading ?? ""));
+  const textScore = similarity(words(reference.text), words(candidate.text));
+  const verticalScore = 1 - Math.min(1, Math.abs(referenceIndex - candidateIndex) / 4);
+  const sizeScore = sizeSimilarity(reference, candidate);
+
+  const score =
+    selectorScore * 0.3 +
+    tagScore * 0.14 +
+    Math.max(idScore, classScore) * 0.14 +
+    headingScore * 0.18 +
+    textScore * 0.14 +
+    verticalScore * 0.06 +
+    sizeScore * 0.04;
+
+  const reasons = [
+    selectorScore >= 1 ? "same selector" : undefined,
+    headingScore >= 0.5 ? "similar heading" : undefined,
+    textScore >= 0.35 ? "similar text" : undefined,
+    Math.max(idScore, classScore) >= 0.35 ? "similar id/class" : undefined,
+    tagScore >= 0.75 ? "same landmark/tag" : undefined,
+    verticalScore >= 0.75 ? "similar page order" : undefined,
+    sizeScore >= 0.75 ? "similar size" : undefined
+  ].filter(Boolean);
+
+  return {
+    section: candidate,
+    candidateIndex,
+    score,
+    reason: reasons.join(", ") || "weak heuristic match"
+  };
 }
 
 function words(text: string): string[] {
-  return text.toLowerCase().match(/[a-z0-9]{3,}/g)?.slice(0, 30) ?? [];
+  return text.toLowerCase().match(/[a-z0-9]{2,}/g)?.slice(0, 40) ?? [];
+}
+
+function similarity(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) return 0;
+  const rightSet = new Set(right);
+  const overlap = left.filter((token) => rightSet.has(token)).length;
+  return overlap / Math.max(left.length, right.length);
+}
+
+function sameLandmarkKind(reference: SectionCandidate, candidate: SectionCandidate): boolean {
+  const landmarks = new Set(["header", "nav", "main", "footer", "section", "article"]);
+  return landmarks.has(reference.tagName) && reference.tagName === candidate.tagName;
+}
+
+function sizeSimilarity(reference: SectionCandidate, candidate: SectionCandidate): number {
+  const widthRatio = ratioSimilarity(reference.rect.width, candidate.rect.width);
+  const heightRatio = ratioSimilarity(reference.rect.height, candidate.rect.height);
+  return (widthRatio + heightRatio) / 2;
+}
+
+function ratioSimilarity(left: number, right: number): number {
+  if (left <= 0 || right <= 0) return 0;
+  return Math.min(left, right) / Math.max(left, right);
 }
 
 async function captureScopedStyleSnapshots(

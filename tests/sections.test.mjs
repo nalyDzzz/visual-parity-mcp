@@ -18,8 +18,13 @@ test("section workflow discovers and compares fixture sections", async () => {
     };
 
     const discovered = await discoverSections(common);
-    assert.ok(discovered.sections.some((section) => section.reference.selector === "header"));
-    assert.ok(discovered.sections.some((section) => section.reference.selector.includes(".hero") || section.label.includes("Migration QA")));
+    const header = discovered.sections.find((section) => section.reference.selector === "header");
+    assert.ok(header);
+    assert.equal(header.candidate?.selector, "header");
+    assert.match(header.matchReason ?? "", /same selector/);
+    const hero = discovered.sections.find((section) => section.reference.selector.includes(".hero") || section.label.includes("Migration QA"));
+    assert.ok(hero);
+    assert.equal(hero.candidate?.selector, "section.hero");
 
     const section = await compareSection({
       ...common,

@@ -188,7 +188,7 @@ Discover likely page sections and candidate matches so an agent can work down th
 }
 ```
 
-The response includes labels, reference/candidate selectors, bounding boxes, text samples, match confidence, and optional crop artifacts.
+The response includes labels, reference/candidate selectors, bounding boxes, text samples, match confidence, match reason, and optional crop artifacts. Section matching scores selector equality, landmark/tag type, heading/text overlap, id/class token overlap, page order, and size similarity while avoiding duplicate candidate reuse.
 
 ### `compare_section`
 

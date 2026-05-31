@@ -341,6 +341,9 @@ export interface SectionCandidate {
   label: string;
   selector: string;
   tagName: string;
+  id?: string;
+  classNames: string[];
+  heading?: string;
   text: string;
   rect: {
     x: number;
@@ -355,6 +358,7 @@ export interface DiscoveredSection {
   reference: SectionCandidate;
   candidate?: SectionCandidate;
   matchConfidence: number;
+  matchReason?: string;
   screenshots?: {
     reference?: string;
     candidate?: string;

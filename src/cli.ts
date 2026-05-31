@@ -493,6 +493,7 @@ function compactDiscoverSectionsSummary(report: DiscoverSectionsReport) {
       referenceSelector: section.reference.selector,
       candidateSelector: section.candidate?.selector,
       matchConfidence: section.matchConfidence,
+      matchReason: section.matchReason,
       referenceRect: section.reference.rect,
       candidateRect: section.candidate?.rect,
       textSample: section.reference.text.slice(0, 160),
@@ -612,7 +613,7 @@ function humanDiscoverSectionsSummary(report: DiscoverSectionsReport): string {
     lines.push(
       `  ${index + 1}. ${section.label}`,
       `     reference: ${section.reference.selector}`,
-      `     candidate: ${section.candidate?.selector ?? "<no match>"} (${Math.round(section.matchConfidence * 100)}%)`
+      `     candidate: ${section.candidate?.selector ?? "<no match>"} (${Math.round(section.matchConfidence * 100)}%, ${section.matchReason ?? "no match reason"})`
     );
     if (section.screenshots?.reference || section.screenshots?.candidate) {
       lines.push(`     crops: ${section.screenshots.reference ?? "<none>"} | ${section.screenshots.candidate ?? "<none>"}`);
